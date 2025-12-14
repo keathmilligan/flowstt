@@ -14,12 +14,13 @@
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
 
-  --waveform-bg: #1e293b;
+  --waveform-bg: #0a0f1a;
   --waveform-color: #3b82f6;
   --waveform-glow: rgba(59, 130, 246, 0.5);
-  --waveform-line: #475569;
-  --waveform-grid: rgba(255, 255, 255, 0.08);
+  --waveform-line: #334155;
+  --waveform-grid: rgba(255, 255, 255, 0.06);
   --waveform-text: rgba(255, 255, 255, 0.5);
+  --spectrogram-grid: rgba(255, 255, 255, 0.12);
 }
 
 body {
@@ -232,16 +233,39 @@ button.recording:hover {
   color: #f6f6f6;
 }
 
+.visualization-row {
+  display: flex;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 150px;
+}
+
 .waveform-area {
-  width: 100%;
   flex: 1;
   min-height: 150px;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid #3a4555;
+  background-color: var(--waveform-bg);
 }
 
 #waveform-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background-color: var(--waveform-bg);
+}
+
+.spectrogram-area {
+  flex: 1;
+  min-height: 150px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #3a4555;
+  background-color: var(--waveform-bg);
+}
+
+#spectrogram-canvas {
   width: 100%;
   height: 100%;
   display: block;
