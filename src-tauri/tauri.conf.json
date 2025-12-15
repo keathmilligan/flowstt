@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "stt-app",
+  "productName": "FlowSTT",
   "version": "0.1.0",
-  "identifier": "com.keath.stt-app",
+  "identifier": "com.keath.flowstt",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Speech to Text",
+        "title": "FlowSTT",
         "width": 900,
         "height": 650,
         "resizable": false,

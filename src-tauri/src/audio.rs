@@ -9,10 +9,29 @@ use tauri::AppHandle;
 #[allow(unused_imports)]
 use crate::processor::{AudioProcessor, SilenceDetector, SpeechDetector, VisualizationProcessor};
 
+/// Audio source type for capture
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum AudioSourceType {
+    /// Microphone or other input device
+    Input,
+    /// System audio (monitor/loopback)
+    System,
+    /// Mixed input and system audio
+    Mixed,
+}
+
+impl Default for AudioSourceType {
+    fn default() -> Self {
+        AudioSourceType::Input
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AudioDevice {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub source_type: AudioSourceType,
 }
 
 /// Raw recorded audio data before processing
@@ -23,32 +42,49 @@ pub struct RawRecordedAudio {
 }
 
 /// Shared state for audio stream
-struct AudioStreamState {
+pub struct AudioStreamState {
     // Recording state
-    recording_samples: Vec<f32>,
-    sample_rate: u32,
-    channels: u16,
-    is_recording: bool,
+    pub recording_samples: Vec<f32>,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub is_recording: bool,
     
     // Monitoring state
-    is_monitoring: bool,
+    pub is_monitoring: bool,
     
     // Visualization processor (always runs when monitoring)
-    visualization_processor: Option<VisualizationProcessor>,
+    pub visualization_processor: Option<VisualizationProcessor>,
     
     // Speech processing state (controlled by toggle)
-    is_processing_enabled: bool,
-    speech_processor: Option<Box<dyn AudioProcessor>>,
+    pub is_processing_enabled: bool,
+    pub speech_processor: Option<Box<dyn AudioProcessor>>,
     
     // Stream control
-    stream_active: bool,
+    pub stream_active: bool,
+    
+    // Source type for current capture
+    pub source_type: AudioSourceType,
+}
+
+/// Mixer state for combining input and system audio in Mixed mode
+struct MixerState {
+    input_buffer: Vec<f32>,
+    system_buffer: Vec<f32>,
+    input_channels: u16,
+    system_channels: u16,
 }
 
 /// Thread-safe audio state that can be shared with Tauri
+#[derive(Clone)]
 pub struct RecordingState {
     state: Arc<Mutex<AudioStreamState>>,
     stop_signal: Arc<Mutex<bool>>,
     current_device_id: Arc<Mutex<Option<String>>>,
+    // For Mixed mode: secondary device (system audio)
+    secondary_device_id: Arc<Mutex<Option<String>>>,
+    secondary_stop_signal: Arc<Mutex<bool>>,
+    // Mixer for combining streams in Mixed mode
+    mixer: Arc<Mutex<MixerState>>,
 }
 
 impl RecordingState {
@@ -64,9 +100,18 @@ impl RecordingState {
                 is_processing_enabled: false,
                 speech_processor: None, // Created when processing is enabled with known sample rate
                 stream_active: false,
+                source_type: AudioSourceType::Input,
             })),
             stop_signal: Arc::new(Mutex::new(false)),
             current_device_id: Arc::new(Mutex::new(None)),
+            secondary_device_id: Arc::new(Mutex::new(None)),
+            secondary_stop_signal: Arc::new(Mutex::new(false)),
+            mixer: Arc::new(Mutex::new(MixerState {
+                input_buffer: Vec::new(),
+                system_buffer: Vec::new(),
+                input_channels: 0,
+                system_channels: 0,
+            })),
         }
     }
 
@@ -92,8 +137,35 @@ impl RecordingState {
             state.speech_processor = Some(Box::new(SpeechDetector::new(sample_rate)));
         }
     }
+
+    /// Initialize for PipeWire capture with given sample rate and channels
+    pub fn init_for_capture(&self, sample_rate: u32, channels: u16, source_type: AudioSourceType) {
+        let mut state = self.state.lock().unwrap();
+        state.sample_rate = sample_rate;
+        state.channels = channels;
+        state.source_type = source_type;
+        state.stream_active = true;
+    }
+
+    /// Mark capture as stopped
+    pub fn mark_capture_stopped(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.stream_active = false;
+    }
+
+    /// Process incoming audio samples from PipeWire
+    /// This is called from the audio processing thread
+    pub fn process_samples(&self, samples: &[f32], channels: usize, app_handle: &AppHandle) {
+        process_audio_samples(samples, channels, &self.state, app_handle);
+    }
+
+    /// Get internal state for advanced operations
+    pub fn get_state(&self) -> Arc<Mutex<AudioStreamState>> {
+        Arc::clone(&self.state)
+    }
 }
 
+/// List available input devices (microphones)
 pub fn list_devices() -> Result<Vec<AudioDevice>, String> {
     let host = cpal::default_host();
     let devices = host
@@ -105,13 +177,109 @@ pub fn list_devices() -> Result<Vec<AudioDevice>, String> {
         let name = device
             .name()
             .unwrap_or_else(|_| format!("Unknown Device {}", index));
+        
+        // Skip monitor sources from input device list
+        if is_monitor_source(&name) {
+            continue;
+        }
+        
         result.push(AudioDevice {
             id: index.to_string(),
             name,
+            source_type: AudioSourceType::Input,
         });
     }
 
     Ok(result)
+}
+
+/// Check if a device name indicates a monitor/loopback source
+fn is_monitor_source(name: &str) -> bool {
+    let name_lower = name.to_lowercase();
+    name_lower.contains("monitor") || name_lower.contains("loopback")
+}
+
+/// List available system audio devices (monitor/loopback sources)
+/// Note: System audio capture on Linux requires additional setup.
+/// cpal's ALSA backend doesn't directly support PipeWire/PulseAudio monitor sources.
+pub fn list_system_audio_devices() -> Result<Vec<AudioDevice>, String> {
+    // Check if cpal can see any monitor sources directly (unlikely with ALSA backend)
+    let host = cpal::default_host();
+    if let Ok(devices) = host.input_devices() {
+        let mut result = Vec::new();
+        for (index, device) in devices.enumerate() {
+            let name = device
+                .name()
+                .unwrap_or_else(|_| format!("Unknown Device {}", index));
+            
+            if is_monitor_source(&name) {
+                let display_name = make_monitor_display_name(&name);
+                result.push(AudioDevice {
+                    id: index.to_string(),
+                    name: display_name,
+                    source_type: AudioSourceType::System,
+                });
+            }
+        }
+        if !result.is_empty() {
+            return Ok(result);
+        }
+    }
+    
+    // System audio not available through cpal/ALSA
+    // Return empty list - UI will show appropriate message
+    Ok(vec![])
+}
+
+/// Create a user-friendly display name for monitor sources
+fn make_monitor_display_name(name: &str) -> String {
+    // PulseAudio/PipeWire format: "Monitor of <output device name>"
+    // or "<output>.monitor"
+    if let Some(stripped) = name.strip_prefix("Monitor of ") {
+        return stripped.to_string();
+    }
+    if let Some(stripped) = name.strip_suffix(".monitor") {
+        // Parse ALSA-style names like "alsa_output.pci-0000_00_1f.3.analog-stereo"
+        // or "alsa_output.usb-Kingston_HyperX_QuadCast_S_4100-00.analog-stereo"
+        
+        // Try to extract device description from the name
+        if let Some(rest) = stripped.strip_prefix("alsa_output.") {
+            // Split by dots to get parts
+            let parts: Vec<&str> = rest.split('.').collect();
+            
+            // Check for USB device (has manufacturer/model in name)
+            if parts.len() >= 2 && parts[0].starts_with("usb-") {
+                // Extract device name from USB identifier like "usb-Kingston_HyperX_QuadCast_S_4100-00"
+                let usb_part = parts[0].strip_prefix("usb-").unwrap_or(parts[0]);
+                // Take the part before the serial number (last segment after -)
+                let device_name = usb_part.rsplitn(2, '-').last().unwrap_or(usb_part);
+                let clean_name = device_name.replace('_', " ");
+                let output_type = parts.last().unwrap_or(&"output").replace('-', " ");
+                return format!("{} ({})", clean_name, output_type);
+            }
+            
+            // For PCI devices, use the output type with a generic name
+            if parts.len() >= 2 && parts[0].starts_with("pci-") {
+                let output_type = parts.last().unwrap_or(&"output");
+                let friendly_type = match *output_type {
+                    "analog-stereo" => "Speakers",
+                    "hdmi-stereo" => "HDMI",
+                    "hdmi-stereo-extra1" => "HDMI 2",
+                    "hdmi-stereo-extra2" => "HDMI 3",
+                    _ => output_type,
+                };
+                return friendly_type.to_string();
+            }
+        }
+        
+        // Fallback: use last part
+        let parts: Vec<&str> = stripped.split('.').collect();
+        if let Some(last_part) = parts.last() {
+            return last_part.replace('-', " ").replace('_', " ");
+        }
+    }
+    // Final fallback
+    name.to_string()
 }
 
 fn get_device_by_id(device_id: &str) -> Result<Device, String> {
@@ -319,6 +487,136 @@ fn maybe_stop_stream(state: &RecordingState) {
     }
 }
 
+/// Stop the secondary stream (used in Mixed mode)
+fn maybe_stop_secondary_stream(state: &RecordingState) {
+    // Signal the secondary stream thread to stop
+    {
+        let mut stop = state.secondary_stop_signal.lock().unwrap();
+        *stop = true;
+    }
+
+    // Clear secondary device
+    {
+        let mut secondary = state.secondary_device_id.lock().unwrap();
+        *secondary = None;
+    }
+    
+    // Clear mixer buffers
+    {
+        let mut mixer = state.mixer.lock().unwrap();
+        mixer.input_buffer.clear();
+        mixer.system_buffer.clear();
+    }
+}
+
+/// Start mixed mode streams (input + system audio)
+/// Note: Mixed mode is not currently supported on Linux as system audio capture
+/// requires PipeWire/PulseAudio integration which is not available through cpal.
+#[allow(unused_variables)]
+fn ensure_mixed_streams_running(
+    input_device_id: &str,
+    system_device_id: &str,
+    state: &RecordingState,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    Err("Mixed mode is not currently supported. System audio capture requires additional setup on Linux.".to_string())
+}
+
+/// Process input samples in mixed mode - add to mixer buffer
+fn process_mixed_input_samples(
+    samples: &[f32],
+    mixer: &Arc<Mutex<MixerState>>,
+    state: &Arc<Mutex<AudioStreamState>>,
+    app_handle: &AppHandle,
+) {
+    if let Ok(mut mixer_state) = mixer.try_lock() {
+        // Convert to mono and add to input buffer
+        let mono: Vec<f32> = if mixer_state.input_channels > 1 {
+            samples
+                .chunks(mixer_state.input_channels as usize)
+                .map(|chunk| chunk.iter().sum::<f32>() / mixer_state.input_channels as f32)
+                .collect()
+        } else {
+            samples.to_vec()
+        };
+        mixer_state.input_buffer.extend(mono);
+        
+        // Try to mix if both buffers have enough samples
+        try_mix_and_process(&mut mixer_state, state, app_handle);
+    }
+}
+
+/// Process system samples in mixed mode - add to mixer buffer
+fn process_mixed_system_samples(
+    samples: &[f32],
+    mixer: &Arc<Mutex<MixerState>>,
+    state: &Arc<Mutex<AudioStreamState>>,
+    app_handle: &AppHandle,
+) {
+    if let Ok(mut mixer_state) = mixer.try_lock() {
+        // Convert to mono and add to system buffer
+        let mono: Vec<f32> = if mixer_state.system_channels > 1 {
+            samples
+                .chunks(mixer_state.system_channels as usize)
+                .map(|chunk| chunk.iter().sum::<f32>() / mixer_state.system_channels as f32)
+                .collect()
+        } else {
+            samples.to_vec()
+        };
+        mixer_state.system_buffer.extend(mono);
+        
+        // Try to mix if both buffers have enough samples
+        try_mix_and_process(&mut mixer_state, state, app_handle);
+    }
+}
+
+/// Mix available samples from both buffers and send to processing
+fn try_mix_and_process(
+    mixer: &mut MixerState,
+    state: &Arc<Mutex<AudioStreamState>>,
+    app_handle: &AppHandle,
+) {
+    // Mix the minimum available samples from both buffers
+    let mix_count = std::cmp::min(mixer.input_buffer.len(), mixer.system_buffer.len());
+    
+    if mix_count == 0 {
+        return;
+    }
+    
+    // Mix with 0.5 gain each to prevent clipping
+    let mixed: Vec<f32> = mixer.input_buffer.iter()
+        .zip(mixer.system_buffer.iter())
+        .take(mix_count)
+        .map(|(&input, &system)| (input * 0.5) + (system * 0.5))
+        .collect();
+    
+    // Remove processed samples from buffers
+    mixer.input_buffer.drain(0..mix_count);
+    mixer.system_buffer.drain(0..mix_count);
+    
+    // Process the mixed audio (already mono)
+    if let Ok(mut audio_state) = state.try_lock() {
+        // Record samples if recording
+        if audio_state.is_recording {
+            audio_state.recording_samples.extend(&mixed);
+        }
+
+        // Run visualization processor if monitoring
+        if audio_state.is_monitoring {
+            if let Some(ref mut viz_processor) = audio_state.visualization_processor {
+                viz_processor.process(&mixed, app_handle);
+            }
+        }
+
+        // Run speech processor if enabled
+        if audio_state.is_monitoring && audio_state.is_processing_enabled {
+            if let Some(ref mut processor) = audio_state.speech_processor {
+                processor.process(&mixed, app_handle);
+            }
+        }
+    }
+}
+
 /// Process samples for both recording and visualization
 fn process_audio_samples(
     samples: &[f32],
@@ -365,6 +663,8 @@ const SPECTROGRAM_HEIGHT: usize = 256;
 /// Start monitoring audio (visualization only)
 pub fn start_monitor(
     device_id: &str,
+    source_type: AudioSourceType,
+    system_device_id: Option<&str>,
     state: &RecordingState,
     app_handle: AppHandle,
 ) -> Result<(), String> {
@@ -375,8 +675,16 @@ pub fn start_monitor(
         }
     }
 
-    // Ensure stream is running
-    ensure_stream_running(device_id, state, app_handle)?;
+    // Ensure stream is running based on source type
+    match source_type {
+        AudioSourceType::Input | AudioSourceType::System => {
+            ensure_stream_running(device_id, state, app_handle)?;
+        }
+        AudioSourceType::Mixed => {
+            let system_id = system_device_id.ok_or("System device ID required for Mixed mode")?;
+            ensure_mixed_streams_running(device_id, system_id, state, app_handle)?;
+        }
+    }
 
     // Enable monitoring and create visualization processor
     {
@@ -384,6 +692,7 @@ pub fn start_monitor(
         let sample_rate = audio_state.sample_rate;
         audio_state.visualization_processor = Some(VisualizationProcessor::new(sample_rate, SPECTROGRAM_HEIGHT));
         audio_state.is_monitoring = true;
+        audio_state.source_type = source_type;
     }
 
     Ok(())
@@ -391,14 +700,20 @@ pub fn start_monitor(
 
 /// Stop monitoring
 pub fn stop_monitor(state: &RecordingState) -> Result<(), String> {
-    {
+    let source_type = {
         let mut audio_state = state.state.lock().unwrap();
         audio_state.is_monitoring = false;
         audio_state.visualization_processor = None;
-    }
+        audio_state.source_type
+    };
 
     // Stop stream if nothing else needs it
     maybe_stop_stream(state);
+    
+    // Also stop secondary stream for Mixed mode
+    if source_type == AudioSourceType::Mixed {
+        maybe_stop_secondary_stream(state);
+    }
 
     Ok(())
 }
@@ -406,6 +721,8 @@ pub fn stop_monitor(state: &RecordingState) -> Result<(), String> {
 /// Start recording (also enables visualization if not already monitoring)
 pub fn start_recording(
     device_id: &str,
+    source_type: AudioSourceType,
+    system_device_id: Option<&str>,
     state: &RecordingState,
     app_handle: AppHandle,
 ) -> Result<(), String> {
@@ -416,14 +733,23 @@ pub fn start_recording(
         }
     }
 
-    // Ensure stream is running
-    ensure_stream_running(device_id, state, app_handle)?;
+    // Ensure stream is running based on source type
+    match source_type {
+        AudioSourceType::Input | AudioSourceType::System => {
+            ensure_stream_running(device_id, state, app_handle)?;
+        }
+        AudioSourceType::Mixed => {
+            let system_id = system_device_id.ok_or("System device ID required for Mixed mode")?;
+            ensure_mixed_streams_running(device_id, system_id, state, app_handle)?;
+        }
+    }
 
     // Enable recording (and monitoring if not already)
     {
         let mut audio_state = state.state.lock().unwrap();
         audio_state.recording_samples.clear();
         audio_state.is_recording = true;
+        audio_state.source_type = source_type;
         // Also enable monitoring for visualization during recording
         if !audio_state.is_monitoring {
             let sample_rate = audio_state.sample_rate;

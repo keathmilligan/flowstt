@@ -1,4 +1,4 @@
-# Speech to Text App
+# FlowSTT
 
 A desktop application for speech-to-text transcription using local Whisper inference.
 

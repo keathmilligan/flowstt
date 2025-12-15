@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 interface AudioDevice {
   id: string;
   name: string;
+  source_type: "Input" | "System" | "Mixed";
 }
 
 interface ModelStatus {
@@ -134,8 +135,10 @@ class WaveformRenderer {
   };
 
   private draw(): void {
-    const width = this.canvas.getBoundingClientRect().width;
-    const height = this.canvas.getBoundingClientRect().height;
+    // Use cached dimensions to avoid layout thrashing
+    const dpr = window.devicePixelRatio || 1;
+    const width = this.canvas.width / dpr;
+    const height = this.canvas.height / dpr;
     const samples = this.ringBuffer.getSamples();
 
     // Clear canvas
@@ -262,8 +265,9 @@ class WaveformRenderer {
 
   // Get the drawable area dimensions (excluding margins)
   private getDrawableArea(): { x: number; y: number; width: number; height: number } {
-    const width = this.canvas.getBoundingClientRect().width;
-    const height = this.canvas.getBoundingClientRect().height;
+    const dpr = window.devicePixelRatio || 1;
+    const width = this.canvas.width / dpr;
+    const height = this.canvas.height / dpr;
     const leftMargin = 32;
     const bottomMargin = 18;
     return {
@@ -275,8 +279,9 @@ class WaveformRenderer {
   }
 
   drawIdle(): void {
-    const width = this.canvas.getBoundingClientRect().width;
-    const height = this.canvas.getBoundingClientRect().height;
+    const dpr = window.devicePixelRatio || 1;
+    const width = this.canvas.width / dpr;
+    const height = this.canvas.height / dpr;
 
     this.ctx.fillStyle = getComputedStyle(document.documentElement)
       .getPropertyValue("--waveform-bg")
@@ -417,13 +422,12 @@ class SpectrogramRenderer {
   private draw(): void {
     if (!this.imageData) return;
     
-    const width = this.canvas.getBoundingClientRect().width;
-    const height = this.canvas.getBoundingClientRect().height;
+    // Use cached dimensions from setupCanvas to avoid layout thrashing
+    const dpr = window.devicePixelRatio || 1;
+    const width = this.canvas.width / dpr;
+    const height = this.canvas.height / dpr;
     
     // Process queued columns from backend
-    // At 48kHz with 512-sample FFT, we get ~93 columns/sec
-    // At 60fps, we need to process ~1.5 columns per frame on average
-    // Process up to 2 columns per frame to keep up, or more if queue is backing up
     const columnsToProcess = Math.min(
       this.columnQueue.length,
       Math.max(2, Math.ceil(this.columnQueue.length / 4))
@@ -583,8 +587,9 @@ class SpectrogramRenderer {
   }
 
   drawIdle(): void {
-    const width = this.canvas.getBoundingClientRect().width;
-    const height = this.canvas.getBoundingClientRect().height;
+    const dpr = window.devicePixelRatio || 1;
+    const width = this.canvas.width / dpr;
+    const height = this.canvas.height / dpr;
     
     const bgColor = getComputedStyle(document.documentElement)
       .getPropertyValue("--waveform-bg")
@@ -600,7 +605,9 @@ class SpectrogramRenderer {
   }
 }
 
-let deviceSelect: HTMLSelectElement | null;
+// DOM elements
+let source1Select: HTMLSelectElement | null;
+let source2Select: HTMLSelectElement | null;
 let recordBtn: HTMLButtonElement | null;
 let monitorToggle: HTMLInputElement | null;
 let processingToggle: HTMLInputElement | null;
@@ -614,10 +621,12 @@ let waveformCanvas: HTMLCanvasElement | null;
 let spectrogramCanvas: HTMLCanvasElement | null;
 let closeBtn: HTMLButtonElement | null;
 
+// State
 let isRecording = false;
 let isMonitoring = false;
 let isProcessingEnabled = false;
 let wasMonitoringBeforeRecording = false;
+let allDevices: AudioDevice[] = [];
 let waveformRenderer: WaveformRenderer | null = null;
 let spectrogramRenderer: SpectrogramRenderer | null = null;
 let visualizationUnlisten: UnlistenFn | null = null;
@@ -628,40 +637,157 @@ let speechEndedUnlisten: UnlistenFn | null = null;
 
 async function loadDevices() {
   try {
-    const devices = await invoke<AudioDevice[]>("list_audio_devices");
+    // Load all available sources
+    allDevices = await invoke<AudioDevice[]>("list_all_sources");
 
-    if (deviceSelect) {
-      deviceSelect.innerHTML = "";
-
-      if (devices.length === 0) {
-        deviceSelect.innerHTML =
-          '<option value="">No audio devices found</option>';
-        return;
-      }
-
-      devices.forEach((device) => {
-        const option = document.createElement("option");
-        option.value = device.id;
-        option.textContent = device.name;
-        deviceSelect?.appendChild(option);
-      });
-
-      if (recordBtn) {
-        recordBtn.disabled = false;
-      }
-      if (monitorToggle) {
-        monitorToggle.disabled = false;
-      }
-      if (processingToggle) {
-        processingToggle.disabled = false;
-      }
+    // Populate both source dropdowns
+    populateSourceDropdown(source1Select, true);  // Has "None" option, select first device
+    populateSourceDropdown(source2Select, false); // Has "None" option, select "None"
+    
+    // Enable controls if we have at least one device
+    const hasDevices = allDevices.length > 0;
+    if (recordBtn) {
+      recordBtn.disabled = !hasDevices;
+    }
+    if (monitorToggle) {
+      monitorToggle.disabled = !hasDevices;
+    }
+    if (processingToggle) {
+      processingToggle.disabled = !hasDevices;
     }
   } catch (error) {
     console.error("Failed to load devices:", error);
-    if (deviceSelect) {
-      deviceSelect.innerHTML = `<option value="">Error loading devices</option>`;
+    if (source1Select) {
+      source1Select.innerHTML = `<option value="">Error loading devices</option>`;
+    }
+    if (source2Select) {
+      source2Select.innerHTML = `<option value="">Error loading devices</option>`;
     }
     setStatus(`Error: ${error}`, "error");
+  }
+}
+
+function populateSourceDropdown(select: HTMLSelectElement | null, selectFirstDevice: boolean) {
+  if (!select) return;
+  
+  select.innerHTML = "";
+  
+  // Add "None" option
+  const noneOption = document.createElement("option");
+  noneOption.value = "";
+  noneOption.textContent = "None";
+  select.appendChild(noneOption);
+  
+  // Add all devices
+  allDevices.forEach((device) => {
+    const option = document.createElement("option");
+    option.value = device.id;
+    option.textContent = device.name;
+    select.appendChild(option);
+  });
+  
+  // Select first device for source1, "None" for source2
+  if (selectFirstDevice && allDevices.length > 0) {
+    select.value = allDevices[0].id;
+  } else {
+    select.value = "";
+  }
+}
+
+function getSelectedSources(): { source1Id: string | null; source2Id: string | null } {
+  const source1Id = source1Select?.value || null;
+  const source2Id = source2Select?.value || null;
+  return {
+    source1Id: source1Id || null,
+    source2Id: source2Id || null,
+  };
+}
+
+function hasAnySourceSelected(): boolean {
+  const { source1Id, source2Id } = getSelectedSources();
+  return source1Id !== null || source2Id !== null;
+}
+
+// Handle source selection changes - reconfigure capture if active
+async function onSourceChange() {
+  if (!isMonitoring && !isRecording) {
+    // Not active, nothing to do
+    return;
+  }
+
+  if (!hasAnySourceSelected()) {
+    // No sources selected - stop everything
+    if (isRecording) {
+      // Can't record with no sources - stop recording
+      setStatus("Recording stopped: no sources selected", "error");
+      try {
+        await invoke("stop_recording", { keepMonitoring: false });
+      } catch (e) {
+        console.error("Error stopping recording:", e);
+      }
+      isRecording = false;
+      isMonitoring = false;
+      if (recordBtn) {
+        recordBtn.textContent = "Record";
+        recordBtn.classList.remove("recording");
+      }
+      if (monitorToggle) {
+        monitorToggle.checked = false;
+        monitorToggle.disabled = false;
+      }
+      waveformRenderer?.stop();
+      waveformRenderer?.clear();
+      spectrogramRenderer?.stop();
+      spectrogramRenderer?.clear();
+      await cleanupVisualizationListener();
+    } else if (isMonitoring) {
+      // Stop monitoring
+      try {
+        await invoke("stop_monitor");
+      } catch (e) {
+        console.error("Error stopping monitor:", e);
+      }
+      isMonitoring = false;
+      if (monitorToggle) {
+        monitorToggle.checked = false;
+      }
+      waveformRenderer?.stop();
+      waveformRenderer?.clear();
+      spectrogramRenderer?.stop();
+      spectrogramRenderer?.clear();
+      await cleanupVisualizationListener();
+      setStatus("");
+    }
+    return;
+  }
+
+  // Reconfigure with new sources
+  const { source1Id, source2Id } = getSelectedSources();
+
+  if (isRecording) {
+    // Restart recording with new sources
+    try {
+      await invoke("start_recording", { source1Id, source2Id });
+      const statusText = source1Id && source2Id 
+        ? "Recording (Mixed)..." 
+        : "Recording...";
+      setStatus(statusText, "loading");
+    } catch (error) {
+      console.error("Error reconfiguring recording:", error);
+      setStatus(`Error: ${error}`, "error");
+    }
+  } else if (isMonitoring) {
+    // Restart monitoring with new sources
+    try {
+      await invoke("start_monitor", { source1Id, source2Id });
+      const statusText = source1Id && source2Id 
+        ? "Monitoring (Mixed)..." 
+        : "Monitoring...";
+      setStatus(statusText, "loading");
+    } catch (error) {
+      console.error("Error reconfiguring monitor:", error);
+      setStatus(`Error: ${error}`, "error");
+    }
   }
 }
 
@@ -814,7 +940,7 @@ async function toggleProcessing() {
 }
 
 async function toggleMonitor() {
-  if (!deviceSelect || !monitorToggle) return;
+  if (!monitorToggle) return;
 
   if (isMonitoring) {
     // Stop monitoring
@@ -836,19 +962,27 @@ async function toggleMonitor() {
     }
   } else {
     // Start monitoring
-    const deviceId = deviceSelect.value;
-    if (!deviceId) {
-      setStatus("Please select an audio device", "error");
-      monitorToggle.checked = false; // Revert toggle
+    if (!hasAnySourceSelected()) {
+      setStatus("Please select at least one audio source", "error");
+      monitorToggle.checked = false;
       return;
     }
 
+    const { source1Id, source2Id } = getSelectedSources();
+
     try {
       await setupVisualizationListener();
-      await invoke("start_monitor", { deviceId });
+      await invoke("start_monitor", { 
+        source1Id,
+        source2Id,
+      });
       isMonitoring = true;
       monitorToggle.checked = true;
-      setStatus("Monitoring...", "loading");
+      
+      const statusText = source1Id && source2Id 
+        ? "Monitoring (Mixed)..." 
+        : "Monitoring...";
+      setStatus(statusText, "loading");
       
       waveformRenderer?.clear();
       waveformRenderer?.start();
@@ -857,19 +991,18 @@ async function toggleMonitor() {
     } catch (error) {
       console.error("Start monitor error:", error);
       setStatus(`Error: ${error}`, "error");
-      monitorToggle.checked = false; // Revert toggle on error
+      monitorToggle.checked = false;
       await cleanupVisualizationListener();
     }
   }
 }
 
 async function toggleRecording() {
-  if (!deviceSelect || !recordBtn) return;
+  if (!recordBtn) return;
 
   if (isRecording) {
-    // Stop recording - this returns immediately, transcription happens in background
+    // Stop recording
     try {
-      // Pass whether to keep monitoring
       await invoke("stop_recording", { 
         keepMonitoring: wasMonitoringBeforeRecording 
       });
@@ -878,18 +1011,14 @@ async function toggleRecording() {
       recordBtn.textContent = "Record";
       recordBtn.classList.remove("recording");
       
-      // Re-enable monitor button
+      // Re-enable monitor toggle
       if (monitorToggle) {
         monitorToggle.disabled = false;
       }
 
-      // If monitoring was active before, keep it running
       if (wasMonitoringBeforeRecording) {
-        // Monitoring continues, update status
         setStatus("Transcribing... (monitoring continues)", "loading");
-        // isMonitoring stays true, waveform and spectrogram keep running
       } else {
-        // Stop visualization since we weren't monitoring before
         isMonitoring = false;
         waveformRenderer?.stop();
         waveformRenderer?.clear();
@@ -913,7 +1042,6 @@ async function toggleRecording() {
       if (monitorToggle) {
         monitorToggle.disabled = false;
       }
-      // On error, stop everything
       waveformRenderer?.stop();
       waveformRenderer?.clear();
       spectrogramRenderer?.stop();
@@ -927,33 +1055,38 @@ async function toggleRecording() {
     }
   } else {
     // Start recording
-    const deviceId = deviceSelect.value;
-    if (!deviceId) {
-      setStatus("Please select an audio device", "error");
+    if (!hasAnySourceSelected()) {
+      setStatus("Please select at least one audio source", "error");
       return;
     }
 
-    // Remember if monitoring was active before recording
+    const { source1Id, source2Id } = getSelectedSources();
     wasMonitoringBeforeRecording = isMonitoring;
 
     try {
-      // Setup listeners if not already
       await setupVisualizationListener();
       await setupTranscriptionListeners();
       
-      await invoke("start_recording", { deviceId });
+      await invoke("start_recording", { 
+        source1Id,
+        source2Id,
+      });
       isRecording = true;
-      isMonitoring = true; // Recording enables monitoring for visualization
+      isMonitoring = true;
       recordBtn.textContent = "Stop";
       recordBtn.classList.add("recording");
-      setStatus("Recording...", "loading");
       
-      // Disable monitor button during recording (can't toggle it)
+      const statusText = source1Id && source2Id 
+        ? "Recording (Mixed)..." 
+        : "Recording...";
+      setStatus(statusText, "loading");
+      
+      // Disable monitor toggle during recording (can't toggle it)
       if (monitorToggle) {
         monitorToggle.disabled = true;
       }
+      // Source selects remain enabled so user can change sources on the fly
 
-      // Start waveform and spectrogram if not already running
       if (!waveformRenderer?.active) {
         waveformRenderer?.clear();
       }
@@ -970,7 +1103,6 @@ async function toggleRecording() {
       console.error("Start recording error:", error);
       setStatus(`Error: ${error}`, "error");
       wasMonitoringBeforeRecording = false;
-      // Don't clean up listener if monitoring was already active
       if (!isMonitoring) {
         await cleanupVisualizationListener();
       }
@@ -979,7 +1111,8 @@ async function toggleRecording() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  deviceSelect = document.querySelector("#device-select");
+  source1Select = document.querySelector("#source1-select");
+  source2Select = document.querySelector("#source2-select");
   recordBtn = document.querySelector("#record-btn");
   monitorToggle = document.querySelector("#monitor-toggle");
   processingToggle = document.querySelector("#processing-toggle");
@@ -1030,6 +1163,8 @@ window.addEventListener("DOMContentLoaded", () => {
   monitorToggle?.addEventListener("change", toggleMonitor);
   processingToggle?.addEventListener("change", toggleProcessing);
   downloadModelBtn?.addEventListener("click", downloadModel);
+  source1Select?.addEventListener("change", onSourceChange);
+  source2Select?.addEventListener("change", onSourceChange);
   closeBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
     e.stopPropagation();

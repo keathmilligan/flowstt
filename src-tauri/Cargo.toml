@@ -1,9 +1,10 @@
 [package]
-name = "stt-app"
+name = "flowstt"
 version = "0.1.0"
-description = "A Tauri App"
+description = "FlowSTT - Speech to Text"
 authors = ["you"]
 edition = "2021"
+default-run = "flowstt"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,7 +12,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "stt_app_lib"
+name = "flowstt_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -23,6 +24,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 cpal = "0.15"
+pipewire = "0.8"
 whisper-rs = "0.14"
 rubato = "0.16"
 dirs = "5"

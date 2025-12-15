@@ -4,43 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Speech to Text</title>
+    <title>FlowSTT</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
   <body>
     <main class="container">
       <button id="close-btn" class="close-btn" title="Close">&times;</button>
-      <h1 data-tauri-drag-region>Speech to Text</h1>
+      <h1 data-tauri-drag-region>FlowSTT</h1>
 
       <div id="model-warning" class="warning hidden">
         <p>Whisper model not found.</p>
         <p id="model-path"></p>
         <button id="download-model-btn">Download Model (~145 MB)</button>
         <p id="download-status" class="download-status"></p>
-      </div>
-
-      <div class="controls">
-        <div class="device-selector">
-          <label for="device-select">Audio Input:</label>
-          <select id="device-select">
-            <option value="">Loading devices...</option>
-          </select>
-        </div>
-
-        <div class="button-group">
-          <label class="toggle-switch">
-            <input type="checkbox" id="monitor-toggle" disabled />
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">Monitor</span>
-          </label>
-          <label class="toggle-switch">
-            <input type="checkbox" id="processing-toggle" disabled />
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">Processing</span>
-          </label>
-          <button id="record-btn" disabled>Record</button>
-        </div>
       </div>
 
       <div class="visualization-row">
@@ -58,6 +35,38 @@
         <h2>Transcription</h2>
         <div id="transcription-result" class="result-box">
           Press Record to start capturing audio.
+        </div>
+      </div>
+
+      <div class="controls-bar">
+        <div class="selectors">
+          <div class="source-selector">
+            <label for="source1-select">Source 1</label>
+            <select id="source1-select">
+              <option value="">Loading...</option>
+            </select>
+          </div>
+
+          <div class="source-selector">
+            <label for="source2-select">Source 2</label>
+            <select id="source2-select">
+              <option value="">Loading...</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="control-buttons">
+          <label class="toggle-switch">
+            <input type="checkbox" id="monitor-toggle" disabled />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Monitor</span>
+          </label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="processing-toggle" disabled />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Processing</span>
+          </label>
+          <button id="record-btn" disabled>Record</button>
         </div>
       </div>
     </main>
