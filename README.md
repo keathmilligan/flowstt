@@ -6,7 +6,7 @@
 
 A voice transcription agent for fluid, natural conversation. FlowSTT goes beyond simple speech-to-text with real-time cadence analysis, intelligent speech detection, and rich automation capabilities.
 
-![FlowSTT Demo](assets/flowstt.gif)
+https://github.com/user-attachments/assets/a55a42d3-710c-4bb3-a4c1-539dd1696e5a
 
 ## Vision
 
