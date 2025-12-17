@@ -19,6 +19,25 @@ pub struct SpeechEventPayload {
     pub duration_ms: Option<u64>,
 }
 
+/// Speech detection metrics for visualization
+#[derive(Clone, Serialize)]
+pub struct SpeechMetrics {
+    /// RMS amplitude in decibels
+    pub amplitude_db: f32,
+    /// Zero-crossing rate (0.0 to 0.5)
+    pub zcr: f32,
+    /// Estimated spectral centroid in Hz
+    pub centroid_hz: f32,
+    /// Whether speech is currently detected
+    pub is_speaking: bool,
+    /// Whether voiced speech onset is pending
+    pub is_voiced_pending: bool,
+    /// Whether whisper speech onset is pending
+    pub is_whisper_pending: bool,
+    /// Whether current frame is classified as transient
+    pub is_transient: bool,
+}
+
 /// Configuration for a speech detection mode (voiced or whisper)
 #[derive(Clone)]
 struct SpeechModeConfig {
@@ -73,6 +92,14 @@ pub struct SpeechDetector {
     speech_sample_count: u64,
     /// Whether we've initialized (first sample processed)
     initialized: bool,
+    /// Last computed amplitude in dB (for metrics)
+    last_amplitude_db: f32,
+    /// Last computed ZCR (for metrics)
+    last_zcr: f32,
+    /// Last computed spectral centroid in Hz (for metrics)
+    last_centroid_hz: f32,
+    /// Whether last frame was classified as transient (for metrics)
+    last_is_transient: bool,
 }
 
 impl SpeechDetector {
@@ -117,6 +144,10 @@ impl SpeechDetector {
             silence_sample_count: 0,
             speech_sample_count: 0,
             initialized: false,
+            last_amplitude_db: f32::NEG_INFINITY,
+            last_zcr: 0.0,
+            last_centroid_hz: 0.0,
+            last_is_transient: false,
         }
     }
 
@@ -172,15 +203,18 @@ impl SpeechDetector {
     /// The intuition: higher frequency signals have larger sample-to-sample
     /// differences relative to their amplitude.
     /// 
-    /// Returns frequency estimate in Hz.
+    /// Returns frequency estimate in Hz. Returns 0.0 when signal is too quiet
+    /// (below -55dB) to avoid noise-induced jitter.
     /// 
     /// Acoustic characteristics:
     /// - Voiced speech: ~300-3500 Hz (fundamental + harmonics)
     /// - Whispered speech: ~500-5000 Hz (shifted up, more fricative)
     /// - Keyboard clicks: >5000 Hz (high-frequency transient)
     /// - Low rumble: <200 Hz
-    fn estimate_spectral_centroid(&self, samples: &[f32]) -> f32 {
-        if samples.len() < 2 {
+    fn estimate_spectral_centroid(&self, samples: &[f32], amplitude_db: f32) -> f32 {
+        // Gate: don't compute centroid for very quiet signals (avoids jitter in silence)
+        const CENTROID_GATE_DB: f32 = -55.0;
+        if samples.len() < 2 || amplitude_db < CENTROID_GATE_DB {
             return 0.0;
         }
         
@@ -240,6 +274,20 @@ impl SpeechDetector {
         self.voiced_onset_count = 0;
         self.whisper_onset_count = 0;
     }
+
+    /// Get the current speech detection metrics.
+    /// Call this after process() to get the latest computed values.
+    pub fn get_metrics(&self) -> SpeechMetrics {
+        SpeechMetrics {
+            amplitude_db: self.last_amplitude_db,
+            zcr: self.last_zcr,
+            centroid_hz: self.last_centroid_hz,
+            is_speaking: self.is_speaking,
+            is_voiced_pending: self.is_pending_voiced,
+            is_whisper_pending: self.is_pending_whisper,
+            is_transient: self.last_is_transient,
+        }
+    }
 }
 
 impl AudioProcessor for SpeechDetector {
@@ -248,7 +296,13 @@ impl AudioProcessor for SpeechDetector {
         let rms = Self::calculate_rms(samples);
         let db = Self::amplitude_to_db(rms);
         let zcr = Self::calculate_zcr(samples);
-        let centroid = self.estimate_spectral_centroid(samples);
+        let centroid = self.estimate_spectral_centroid(samples, db);
+
+        // Store metrics for later retrieval
+        self.last_amplitude_db = db;
+        self.last_zcr = zcr;
+        self.last_centroid_hz = centroid;
+        self.last_is_transient = self.is_transient(zcr, centroid);
 
         if !self.initialized {
             self.initialized = true;
@@ -258,7 +312,7 @@ impl AudioProcessor for SpeechDetector {
 
         // Step 2: Check for transient rejection (keyboard clicks, etc.)
         // Transients have both high ZCR AND high centroid
-        if self.is_transient(zcr, centroid) {
+        if self.last_is_transient {
             // Reset onset timers - transient breaks any pending speech detection
             self.reset_onset_state();
             // Don't affect confirmed speech within hold time
@@ -358,6 +412,8 @@ pub struct VisualizationPayload {
     pub waveform: Vec<f32>,
     /// Spectrogram column with RGB colors (present when FFT buffer fills)
     pub spectrogram: Option<SpectrogramColumn>,
+    /// Speech detection metrics (present when speech processor is active)
+    pub speech_metrics: Option<SpeechMetrics>,
 }
 
 /// A single column of spectrogram data ready for rendering
@@ -403,6 +459,8 @@ pub struct VisualizationProcessor {
     waveform_buffer: Vec<f32>,
     /// Target waveform output samples per emit
     waveform_target_samples: usize,
+    /// Speech metrics to include in next visualization event
+    pending_speech_metrics: Option<SpeechMetrics>,
 }
 
 impl VisualizationProcessor {
@@ -439,7 +497,13 @@ impl VisualizationProcessor {
             color_lut,
             waveform_buffer: Vec::with_capacity(256),
             waveform_target_samples: 64, // Output ~64 samples per batch for smooth waveform
+            pending_speech_metrics: None,
         }
+    }
+
+    /// Set speech metrics to include in the next visualization event
+    pub fn set_speech_metrics(&mut self, metrics: SpeechMetrics) {
+        self.pending_speech_metrics = Some(metrics);
     }
     
     /// Build the color lookup table matching the frontend gradient
@@ -651,10 +715,14 @@ impl AudioProcessor for VisualizationProcessor {
         let waveform = self.downsample_waveform(&self.waveform_buffer);
         self.waveform_buffer.clear();
         
+        // Take speech metrics (will be None if not set)
+        let speech_metrics = self.pending_speech_metrics.take();
+        
         // Emit visualization data
         let payload = VisualizationPayload {
             waveform,
             spectrogram,
+            speech_metrics,
         };
         
         let _ = app_handle.emit("visualization-data", payload);

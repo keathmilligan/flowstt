@@ -23,16 +23,29 @@
         <p id="download-status" class="download-status"></p>
       </div>
 
-      <div class="visualization-row">
-        <div class="waveform-area">
-          <canvas id="waveform-canvas"></canvas>
+      <div class="visualization-container">
+        <div class="visualization-row">
+          <div class="waveform-area">
+            <canvas id="waveform-canvas"></canvas>
+          </div>
+          <div class="spectrogram-area">
+            <canvas id="spectrogram-canvas"></canvas>
+          </div>
         </div>
-        <div class="spectrogram-area">
-          <canvas id="spectrogram-canvas"></canvas>
+        <div class="speech-activity-area">
+          <canvas id="speech-activity-canvas"></canvas>
         </div>
       </div>
 
-      <div id="status" class="status"></div>
+      <div class="status-legend-row">
+        <div id="status" class="status"></div>
+        <div class="speech-activity-legend">
+          <span class="legend-item"><span class="legend-color" style="background: rgba(34, 197, 94, 0.5);"></span>Speaking</span>
+          <span class="legend-item"><span class="legend-color" style="background: rgb(245, 158, 11);"></span>Amplitude</span>
+          <span class="legend-item"><span class="legend-color" style="background: rgb(6, 182, 212);"></span>ZCR</span>
+          <span class="legend-item"><span class="legend-color" style="background: rgb(217, 70, 239);"></span>Centroid</span>
+        </div>
+      </div>
 
       <div class="transcription-area">
         <h2>Transcription</h2>

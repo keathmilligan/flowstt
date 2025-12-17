@@ -51,7 +51,7 @@ pub struct AudioStreamState {
     pub visualization_processor: Option<VisualizationProcessor>,
     
     // Speech processor (always runs when monitoring)
-    pub speech_processor: Option<Box<dyn AudioProcessor>>,
+    pub speech_processor: Option<SpeechDetector>,
     
     // Stream control
     pub stream_active: bool,
@@ -99,7 +99,7 @@ impl RecordingState {
         state.source_type = source_type;
         state.stream_active = true;
         // Initialize speech processor with current sample rate
-        state.speech_processor = Some(Box::new(SpeechDetector::new(sample_rate)));
+        state.speech_processor = Some(SpeechDetector::new(sample_rate));
     }
 
     /// Mark capture as stopped
@@ -145,17 +145,25 @@ fn process_audio_samples(
             samples.to_vec()
         };
 
-        // Run visualization processor if monitoring (always runs, independent of processing toggle)
-        if audio_state.is_monitoring {
-            if let Some(ref mut viz_processor) = audio_state.visualization_processor {
-                viz_processor.process(&mono_samples, app_handle);
-            }
-        }
-
         // Run speech processor when monitoring is active (always on)
+        // Do this first so we can capture metrics for visualization
         if audio_state.is_monitoring {
             if let Some(ref mut processor) = audio_state.speech_processor {
                 processor.process(&mono_samples, app_handle);
+            }
+        }
+
+        // Run visualization processor if monitoring (always runs, independent of processing toggle)
+        if audio_state.is_monitoring {
+            // Get speech metrics from the speech processor
+            let speech_metrics = audio_state.speech_processor.as_ref().map(|p| p.get_metrics());
+            
+            if let Some(ref mut viz_processor) = audio_state.visualization_processor {
+                // Set speech metrics on visualization processor before processing
+                if let Some(metrics) = speech_metrics {
+                    viz_processor.set_speech_metrics(metrics);
+                }
+                viz_processor.process(&mono_samples, app_handle);
             }
         }
     }
