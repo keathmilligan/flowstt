@@ -221,10 +221,12 @@ class WaveformRenderer {
       .getPropertyValue("--waveform-text")
       .trim() || "rgba(255, 255, 255, 0.5)";
     
-    const leftMargin = 32; // Space for Y-axis labels
-    const bottomMargin = 18; // Space for X-axis labels
-    const graphWidth = width - leftMargin;
-    const graphHeight = height - bottomMargin;
+    const leftMargin = 40; // Space for Y-axis labels
+    const rightMargin = 8; // Space to prevent right edge clipping
+    const topMargin = 8; // Space to prevent top edge clipping
+    const bottomMargin = 20; // Space for X-axis labels
+    const graphWidth = width - leftMargin - rightMargin;
+    const graphHeight = height - topMargin - bottomMargin;
     
     this.ctx.strokeStyle = gridColor;
     this.ctx.lineWidth = 1;
@@ -232,10 +234,10 @@ class WaveformRenderer {
     // Horizontal grid lines (amplitude levels) - tighter spacing
     const horizontalLines = 8;
     for (let i = 0; i <= horizontalLines; i++) {
-      const y = (graphHeight / horizontalLines) * i;
+      const y = topMargin + (graphHeight / horizontalLines) * i;
       this.ctx.beginPath();
       this.ctx.moveTo(leftMargin, y);
-      this.ctx.lineTo(width, y);
+      this.ctx.lineTo(leftMargin + graphWidth, y);
       this.ctx.stroke();
     }
 
@@ -244,8 +246,8 @@ class WaveformRenderer {
     for (let i = 0; i <= verticalLines; i++) {
       const x = leftMargin + (graphWidth / verticalLines) * i;
       this.ctx.beginPath();
-      this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, graphHeight);
+      this.ctx.moveTo(x, topMargin);
+      this.ctx.lineTo(x, topMargin + graphHeight);
       this.ctx.stroke();
     }
 
@@ -258,19 +260,20 @@ class WaveformRenderer {
     const yLabels = ["1.0", "0.5", "0", "-0.5", "-1.0"];
     const yPositions = [0, 0.25, 0.5, 0.75, 1];
     for (let i = 0; i < yLabels.length; i++) {
-      const y = yPositions[i] * graphHeight;
+      const y = topMargin + yPositions[i] * graphHeight;
       this.ctx.fillText(yLabels[i], leftMargin - 4, y);
     }
 
-    // Draw X-axis labels (time in seconds)
+    // Draw X-axis labels (time in seconds, 0 = now on right)
     this.ctx.textAlign = "center";
     this.ctx.textBaseline = "top";
     
-    // Assuming ~0.5 seconds of visible audio in buffer
-    const timeLabels = ["0.0s", "0.1s", "0.2s", "0.3s", "0.4s", "0.5s"];
+    // Ring buffer holds 512 samples, each emit ~10ms, so ~80ms visible
+    // Labels show time ago (0 = now on right, older on left)
+    const timeLabels = ["-80ms", "-60ms", "-40ms", "-20ms", "0"];
     for (let i = 0; i < timeLabels.length; i++) {
       const x = leftMargin + (graphWidth / (timeLabels.length - 1)) * i;
-      this.ctx.fillText(timeLabels[i], x, graphHeight + 4);
+      this.ctx.fillText(timeLabels[i], x, topMargin + graphHeight + 4);
     }
   }
 
@@ -279,13 +282,15 @@ class WaveformRenderer {
     const dpr = window.devicePixelRatio || 1;
     const width = this.canvas.width / dpr;
     const height = this.canvas.height / dpr;
-    const leftMargin = 32;
-    const bottomMargin = 18;
+    const leftMargin = 40;
+    const rightMargin = 8;
+    const topMargin = 8;
+    const bottomMargin = 20;
     return {
       x: leftMargin,
-      y: 0,
-      width: width - leftMargin,
-      height: height - bottomMargin
+      y: topMargin,
+      width: width - leftMargin - rightMargin,
+      height: height - topMargin - bottomMargin
     };
   }
 
@@ -330,8 +335,10 @@ class SpectrogramRenderer {
   private maxQueueSize: number = 60; // Limit queue to prevent memory growth
 
   // Layout constants matching waveform
-  private readonly leftMargin = 32;
-  private readonly bottomMargin = 18;
+  private readonly leftMargin = 40;
+  private readonly rightMargin = 8;
+  private readonly topMargin = 8;
+  private readonly bottomMargin = 20;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -362,8 +369,8 @@ class SpectrogramRenderer {
     this.ctx.scale(dpr, dpr);
     
     // Setup offscreen canvas for spectrogram (drawable area only)
-    const drawableWidth = Math.floor(rect.width - this.leftMargin);
-    const drawableHeight = Math.floor(rect.height - this.bottomMargin);
+    const drawableWidth = Math.floor(rect.width - this.leftMargin - this.rightMargin);
+    const drawableHeight = Math.floor(rect.height - this.topMargin - this.bottomMargin);
     this.offscreenCanvas.width = drawableWidth * dpr;
     this.offscreenCanvas.height = drawableHeight * dpr;
     
@@ -461,12 +468,12 @@ class SpectrogramRenderer {
     this.offscreenCtx.putImageData(this.imageData, 0, 0);
     
     // Draw offscreen canvas to main canvas in the drawable area
-    const drawableWidth = width - this.leftMargin;
-    const drawableHeight = height - this.bottomMargin;
+    const drawableWidth = width - this.leftMargin - this.rightMargin;
+    const drawableHeight = height - this.topMargin - this.bottomMargin;
     this.ctx.drawImage(
       this.offscreenCanvas,
       0, 0, this.offscreenCanvas.width, this.offscreenCanvas.height,
-      this.leftMargin, 0, drawableWidth, drawableHeight
+      this.leftMargin, this.topMargin, drawableWidth, drawableHeight
     );
     
     // Draw grid on top of spectrogram
@@ -544,8 +551,8 @@ class SpectrogramRenderer {
       .getPropertyValue("--waveform-text")
       .trim() || "rgba(255, 255, 255, 0.5)";
     
-    const graphWidth = width - this.leftMargin;
-    const graphHeight = height - this.bottomMargin;
+    const graphWidth = width - this.leftMargin - this.rightMargin;
+    const graphHeight = height - this.topMargin - this.bottomMargin;
     
     this.ctx.strokeStyle = gridColor;
     this.ctx.lineWidth = 1;
@@ -554,10 +561,10 @@ class SpectrogramRenderer {
     const gridFrequencies = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
     for (const freq of gridFrequencies) {
       const yPos = this.freqToYPosition(freq);
-      const y = yPos * graphHeight;
+      const y = this.topMargin + yPos * graphHeight;
       this.ctx.beginPath();
       this.ctx.moveTo(this.leftMargin, y);
-      this.ctx.lineTo(width, y);
+      this.ctx.lineTo(this.leftMargin + graphWidth, y);
       this.ctx.stroke();
     }
 
@@ -566,8 +573,8 @@ class SpectrogramRenderer {
     for (let i = 0; i <= verticalLines; i++) {
       const x = this.leftMargin + (graphWidth / verticalLines) * i;
       this.ctx.beginPath();
-      this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, graphHeight);
+      this.ctx.moveTo(x, this.topMargin);
+      this.ctx.lineTo(x, this.topMargin + graphHeight);
       this.ctx.stroke();
     }
 
@@ -582,18 +589,20 @@ class SpectrogramRenderer {
     const labelNames = ["100", "500", "1k", "5k", "20k"];
     for (let i = 0; i < labelFrequencies.length; i++) {
       const yPos = this.freqToYPosition(labelFrequencies[i]);
-      const y = yPos * graphHeight;
+      const y = this.topMargin + yPos * graphHeight;
       this.ctx.fillText(labelNames[i], this.leftMargin - 4, y);
     }
 
-    // Draw X-axis labels (time in seconds)
+    // Draw X-axis labels (time in seconds, 0 = now on right)
     this.ctx.textAlign = "center";
     this.ctx.textBaseline = "top";
     
-    const timeLabels = ["0.0s", "0.1s", "0.2s", "0.3s", "0.4s", "0.5s"];
+    // Spectrogram scrolls with FFT columns, each ~10ms at 48kHz
+    // Canvas width determines visible duration - estimate ~2.5s based on typical width
+    const timeLabels = ["-2.5s", "-2s", "-1.5s", "-1s", "-0.5s", "0"];
     for (let i = 0; i < timeLabels.length; i++) {
       const x = this.leftMargin + (graphWidth / (timeLabels.length - 1)) * i;
-      this.ctx.fillText(timeLabels[i], x, graphHeight + 4);
+      this.ctx.fillText(timeLabels[i], x, this.topMargin + graphHeight + 4);
     }
   }
 
@@ -637,8 +646,10 @@ class SpeechActivityRenderer {
   private filled: boolean = false;
   
   // Layout constants
-  private readonly leftMargin = 32;
-  private readonly bottomMargin = 18;
+  private readonly leftMargin = 40;
+  private readonly rightMargin = 8;
+  private readonly topMargin = 8;
+  private readonly bottomMargin = 20;
   
   // Normalization ranges
   private readonly minDb = -60;
@@ -749,9 +760,9 @@ class SpeechActivityRenderer {
     const height = this.canvas.height / dpr;
     return {
       x: this.leftMargin,
-      y: 0,
-      width: width - this.leftMargin,
-      height: height - this.bottomMargin
+      y: this.topMargin,
+      width: width - this.leftMargin - this.rightMargin,
+      height: height - this.topMargin - this.bottomMargin
     };
   }
 
@@ -907,8 +918,8 @@ class SpeechActivityRenderer {
       .getPropertyValue("--waveform-text")
       .trim() || "rgba(255, 255, 255, 0.5)";
     
-    const graphWidth = width - this.leftMargin;
-    const graphHeight = height - this.bottomMargin;
+    const graphWidth = width - this.leftMargin - this.rightMargin;
+    const graphHeight = height - this.topMargin - this.bottomMargin;
 
     // Regular grid lines
     this.ctx.strokeStyle = gridColor;
@@ -917,10 +928,10 @@ class SpeechActivityRenderer {
     // Horizontal grid lines (5 divisions)
     const horizontalLines = 5;
     for (let i = 0; i <= horizontalLines; i++) {
-      const y = (graphHeight / horizontalLines) * i;
+      const y = this.topMargin + (graphHeight / horizontalLines) * i;
       this.ctx.beginPath();
       this.ctx.moveTo(this.leftMargin, y);
-      this.ctx.lineTo(width, y);
+      this.ctx.lineTo(this.leftMargin + graphWidth, y);
       this.ctx.stroke();
     }
 
@@ -929,8 +940,8 @@ class SpeechActivityRenderer {
     for (let i = 0; i <= verticalLines; i++) {
       const x = this.leftMargin + (graphWidth / verticalLines) * i;
       this.ctx.beginPath();
-      this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, graphHeight);
+      this.ctx.moveTo(x, this.topMargin);
+      this.ctx.lineTo(x, this.topMargin + graphHeight);
       this.ctx.stroke();
     }
 
@@ -939,17 +950,17 @@ class SpeechActivityRenderer {
     this.ctx.lineWidth = 1.5;
 
     // -40dB threshold (voiced)
-    const voicedY = graphHeight - ((this.voicedThresholdDb - this.minDb) / (this.maxDb - this.minDb)) * graphHeight;
+    const voicedY = this.topMargin + graphHeight - ((this.voicedThresholdDb - this.minDb) / (this.maxDb - this.minDb)) * graphHeight;
     this.ctx.beginPath();
     this.ctx.moveTo(this.leftMargin, voicedY);
-    this.ctx.lineTo(width, voicedY);
+    this.ctx.lineTo(this.leftMargin + graphWidth, voicedY);
     this.ctx.stroke();
 
     // -50dB threshold (whisper)
-    const whisperY = graphHeight - ((this.whisperThresholdDb - this.minDb) / (this.maxDb - this.minDb)) * graphHeight;
+    const whisperY = this.topMargin + graphHeight - ((this.whisperThresholdDb - this.minDb) / (this.maxDb - this.minDb)) * graphHeight;
     this.ctx.beginPath();
     this.ctx.moveTo(this.leftMargin, whisperY);
-    this.ctx.lineTo(width, whisperY);
+    this.ctx.lineTo(this.leftMargin + graphWidth, whisperY);
     this.ctx.stroke();
 
     // Draw Y-axis labels
@@ -962,19 +973,20 @@ class SpeechActivityRenderer {
     const dbLabels = [0, -20, -40, -50, -60];
     for (const db of dbLabels) {
       const normalizedY = (db - this.minDb) / (this.maxDb - this.minDb);
-      const y = graphHeight - normalizedY * graphHeight;
+      const y = this.topMargin + graphHeight - normalizedY * graphHeight;
       const label = db === -40 ? "-40V" : db === -50 ? "-50W" : `${db}`;
       this.ctx.fillText(label, this.leftMargin - 3, y);
     }
 
-    // X-axis time labels
+    // X-axis time labels (0 = now on right)
     this.ctx.textAlign = "center";
     this.ctx.textBaseline = "top";
     
-    const timeLabels = ["0.0s", "0.1s", "0.2s", "0.3s", "0.4s", "0.5s"];
+    // Buffer holds 256 metrics, each emit ~10ms, so ~2.56s visible
+    const timeLabels = ["-2.5s", "-2s", "-1.5s", "-1s", "-0.5s", "0"];
     for (let i = 0; i < timeLabels.length; i++) {
       const x = this.leftMargin + (graphWidth / (timeLabels.length - 1)) * i;
-      this.ctx.fillText(timeLabels[i], x, graphHeight + 4);
+      this.ctx.fillText(timeLabels[i], x, this.topMargin + graphHeight + 4);
     }
   }
 
