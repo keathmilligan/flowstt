@@ -1,4 +1,4 @@
-//! PipeWire-based audio capture backend
+//! PipeWire-based audio capture backend for Linux
 //!
 //! This module provides audio capture from input devices and system audio (sink monitors)
 //! using PipeWire directly. It integrates with the existing audio processing pipeline.
@@ -17,7 +17,6 @@ use pipewire::{
     stream::{Stream, StreamFlags},
     types::ObjectType,
 };
-use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;
@@ -28,17 +27,7 @@ use std::thread::{self, JoinHandle};
 
 use aec3::voip::VoipAec3;
 use crate::audio::{AudioSourceType, RecordingMode};
-
-/// Audio device information from PipeWire
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PwAudioDevice {
-    /// PipeWire node ID
-    pub id: u32,
-    /// Human-readable device name
-    pub name: String,
-    /// Source type (Input or System)
-    pub source_type: AudioSourceType,
-}
+use crate::platform::{AudioBackend, AudioSamples, PlatformAudioDevice};
 
 /// Commands sent to the PipeWire thread
 #[derive(Debug)]
@@ -52,10 +41,10 @@ enum PwCommand {
     StopCapture,
 }
 
-/// Audio samples received from PipeWire (already mixed if multiple sources)
-pub struct PwAudioSamples {
-    pub samples: Vec<f32>,
-    pub channels: u16,
+/// Internal audio samples type for PipeWire thread communication
+struct PwAudioSamples {
+    samples: Vec<f32>,
+    channels: u16,
 }
 
 /// Handle to the PipeWire audio backend
@@ -65,9 +54,9 @@ pub struct PipeWireBackend {
     /// Channel to receive audio samples
     audio_rx: mpsc::Receiver<PwAudioSamples>,
     /// Cached input devices
-    input_devices: Arc<Mutex<Vec<PwAudioDevice>>>,
+    input_devices: Arc<Mutex<Vec<PlatformAudioDevice>>>,
     /// Cached system devices
-    system_devices: Arc<Mutex<Vec<PwAudioDevice>>>,
+    system_devices: Arc<Mutex<Vec<PlatformAudioDevice>>>,
     /// Thread handle
     _thread_handle: JoinHandle<()>,
     /// Sample rate from PipeWire
@@ -123,51 +112,60 @@ impl PipeWireBackend {
             recording_mode,
         })
     }
+}
 
-    /// Get list of input devices
-    pub fn list_input_devices(&self) -> Vec<PwAudioDevice> {
+impl AudioBackend for PipeWireBackend {
+    fn list_input_devices(&self) -> Vec<PlatformAudioDevice> {
         self.input_devices.lock().unwrap().clone()
     }
 
-    /// Get list of system audio devices (sink monitors)
-    pub fn list_system_devices(&self) -> Vec<PwAudioDevice> {
+    fn list_system_devices(&self) -> Vec<PlatformAudioDevice> {
         self.system_devices.lock().unwrap().clone()
     }
 
-    /// Get current sample rate
-    pub fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> u32 {
         *self.sample_rate.lock().unwrap()
     }
 
-    /// Start audio capture from up to two sources (mixed together)
-    pub fn start_capture_sources(
+    fn start_capture_sources(
         &self,
-        source1_id: Option<u32>,
-        source2_id: Option<u32>,
+        source1_id: Option<String>,
+        source2_id: Option<String>,
     ) -> Result<(), String> {
+        // Convert string IDs to u32 for PipeWire
+        let source1: Option<u32> = source1_id.as_ref().and_then(|s| s.parse().ok());
+        let source2: Option<u32> = source2_id.as_ref().and_then(|s| s.parse().ok());
+        
         self.cmd_tx
             .send(PwCommand::StartCaptureSources {
-                source1_id,
-                source2_id,
+                source1_id: source1,
+                source2_id: source2,
             })
             .map_err(|e| format!("Failed to send start command: {}", e))
     }
 
-    /// Stop audio capture
-    pub fn stop_capture(&self) -> Result<(), String> {
+    fn stop_capture(&self) -> Result<(), String> {
         self.cmd_tx
             .send(PwCommand::StopCapture)
             .map_err(|e| format!("Failed to send stop command: {}", e))
     }
 
-    /// Try to receive audio samples (non-blocking)
-    pub fn try_recv(&self) -> Option<PwAudioSamples> {
-        self.audio_rx.try_recv().ok()
+    fn try_recv(&self) -> Option<AudioSamples> {
+        self.audio_rx.try_recv().ok().map(|pw_samples| AudioSamples {
+            samples: pw_samples.samples,
+            channels: pw_samples.channels,
+        })
     }
-
 }
 
-
+/// Create a Linux audio backend using PipeWire
+pub fn create_backend(
+    aec_enabled: Arc<Mutex<bool>>,
+    recording_mode: Arc<Mutex<RecordingMode>>,
+) -> Result<Box<dyn AudioBackend>, String> {
+    let backend = PipeWireBackend::new(aec_enabled, recording_mode)?;
+    Ok(Box::new(backend))
+}
 
 /// AEC3 frame size: 10ms at 48kHz = 480 samples per channel
 const AEC_FRAME_SAMPLES: usize = 480;
@@ -371,8 +369,8 @@ struct PwThreadState {
 fn run_pipewire_thread(
     cmd_rx: mpsc::Receiver<PwCommand>,
     audio_tx: mpsc::Sender<PwAudioSamples>,
-    input_devices: Arc<Mutex<Vec<PwAudioDevice>>>,
-    system_devices: Arc<Mutex<Vec<PwAudioDevice>>>,
+    input_devices: Arc<Mutex<Vec<PlatformAudioDevice>>>,
+    system_devices: Arc<Mutex<Vec<PlatformAudioDevice>>>,
     sample_rate: Arc<Mutex<u32>>,
     aec_enabled: Arc<Mutex<bool>>,
     recording_mode: Arc<Mutex<RecordingMode>>,
@@ -390,8 +388,8 @@ fn run_pipewire_thread(
         .map_err(|e| format!("Failed to get registry: {}", e))?;
 
     // Device maps for enumeration
-    let input_map: Rc<RefCell<HashMap<u32, PwAudioDevice>>> = Rc::new(RefCell::new(HashMap::new()));
-    let system_map: Rc<RefCell<HashMap<u32, PwAudioDevice>>> = Rc::new(RefCell::new(HashMap::new()));
+    let input_map: Rc<RefCell<HashMap<u32, PlatformAudioDevice>>> = Rc::new(RefCell::new(HashMap::new()));
+    let system_map: Rc<RefCell<HashMap<u32, PlatformAudioDevice>>> = Rc::new(RefCell::new(HashMap::new()));
 
     // Setup registry listener for device discovery
     let input_map_clone = Rc::clone(&input_map);
@@ -410,8 +408,8 @@ fn run_pipewire_thread(
 
                     if media_class == "Audio/Source" {
                         // Input device (microphone)
-                        let device = PwAudioDevice {
-                            id: global.id,
+                        let device = PlatformAudioDevice {
+                            id: global.id.to_string(),
                             name: node_desc.to_string(),
                             source_type: AudioSourceType::Input,
                         };
@@ -421,8 +419,8 @@ fn run_pipewire_thread(
                         *input_devices_clone.lock().unwrap() = devices;
                     } else if media_class == "Audio/Sink" {
                         // Output device - we can capture its monitor
-                        let device = PwAudioDevice {
-                            id: global.id,
+                        let device = PlatformAudioDevice {
+                            id: global.id.to_string(),
                             name: format!("{} (Monitor)", node_desc),
                             source_type: AudioSourceType::System,
                         };

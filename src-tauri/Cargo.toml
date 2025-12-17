@@ -22,11 +22,13 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-pipewire = "0.8"
 whisper-rs = "0.14"
 dirs = "5"
 reqwest = { version = "0.12", features = ["blocking"] }
 rustfft = "6.2"
-aec3 = "0.1"  # Pure Rust port of WebRTC AEC3, supports 48kHz
 hound = "3.5"
 
+# Linux-specific dependencies
+[target.'cfg(target_os = "linux")'.dependencies]
+pipewire = "0.8"
+aec3 = "0.1"  # Pure Rust port of WebRTC AEC3, supports 48kHz

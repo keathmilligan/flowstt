@@ -1,10 +1,10 @@
 mod audio;
-mod pipewire_audio;
+mod platform;
 mod processor;
 mod transcribe;
 
 use audio::{AudioDevice, AudioSourceType, RecordingMode, RecordingState, generate_recording_filename, save_to_wav};
-use pipewire_audio::{PipeWireBackend, PwAudioDevice};
+use platform::{AudioBackend, PlatformAudioDevice, create_backend};
 use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -12,7 +12,8 @@ use std::thread;
 use tauri::{AppHandle, Emitter, State};
 use transcribe::Transcriber;
 
-/// Detect if running on Wayland and set workaround env vars
+/// Detect if running on Wayland and set workaround env vars (Linux-specific)
+#[cfg(target_os = "linux")]
 fn configure_wayland_workarounds() {
     // Check for Wayland session
     let is_wayland = env::var("WAYLAND_DISPLAY").is_ok()
@@ -29,10 +30,16 @@ fn configure_wayland_workarounds() {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+fn configure_wayland_workarounds() {
+    // No-op on non-Linux platforms
+}
+
 struct AppState {
     recording: RecordingState,
     transcriber: Mutex<Transcriber>,
-    pipewire: Arc<Mutex<Option<PipeWireBackend>>>,
+    /// Platform-agnostic audio backend
+    audio_backend: Arc<Mutex<Option<Box<dyn AudioBackend>>>>,
     /// Flag to signal the audio processing thread to stop
     processing_active: Arc<Mutex<bool>>,
     /// Flag to enable/disable echo cancellation in the mixer
@@ -41,42 +48,42 @@ struct AppState {
     recording_mode: Arc<Mutex<RecordingMode>>,
 }
 
-/// Convert PipeWire device to frontend AudioDevice format
-fn pw_device_to_audio_device(pw_dev: &PwAudioDevice) -> AudioDevice {
+/// Convert platform device to frontend AudioDevice format
+fn platform_device_to_audio_device(dev: &PlatformAudioDevice) -> AudioDevice {
     AudioDevice {
-        id: pw_dev.id.to_string(),
-        name: pw_dev.name.clone(),
-        source_type: pw_dev.source_type,
+        id: dev.id.clone(),
+        name: dev.name.clone(),
+        source_type: dev.source_type,
     }
 }
 
 /// List all available audio sources (both input devices and system audio monitors)
 #[tauri::command]
 fn list_all_sources(state: State<AppState>) -> Result<Vec<AudioDevice>, String> {
-    let pw_guard = state.pipewire.lock().unwrap();
-    if let Some(ref pw) = *pw_guard {
+    let backend_guard = state.audio_backend.lock().unwrap();
+    if let Some(ref backend) = *backend_guard {
         let mut devices = Vec::new();
         
         // Add input devices
-        for dev in pw.list_input_devices() {
-            devices.push(pw_device_to_audio_device(&dev));
+        for dev in backend.list_input_devices() {
+            devices.push(platform_device_to_audio_device(&dev));
         }
         
         // Add system audio monitors
-        for dev in pw.list_system_devices() {
-            devices.push(pw_device_to_audio_device(&dev));
+        for dev in backend.list_system_devices() {
+            devices.push(platform_device_to_audio_device(&dev));
         }
         
         Ok(devices)
     } else {
-        Err("PipeWire not available".to_string())
+        Err("Audio backend not available".to_string())
     }
 }
 
-/// Start the audio processing loop that receives samples from PipeWire
+/// Start the audio processing loop that receives samples from the backend
 fn start_audio_processing_thread(
     recording: RecordingState,
-    pipewire: Arc<Mutex<Option<PipeWireBackend>>>,
+    audio_backend: Arc<Mutex<Option<Box<dyn AudioBackend>>>>,
     processing_active: Arc<Mutex<bool>>,
     app_handle: AppHandle,
 ) {
@@ -87,11 +94,11 @@ fn start_audio_processing_thread(
                 break;
             }
 
-            // Try to receive audio from PipeWire
+            // Try to receive audio from backend
             let samples = {
-                let pw_guard = pipewire.lock().unwrap();
-                if let Some(ref pw) = *pw_guard {
-                    pw.try_recv()
+                let backend_guard = audio_backend.lock().unwrap();
+                if let Some(ref backend) = *backend_guard {
+                    backend.try_recv()
                 } else {
                     None
                 }
@@ -126,20 +133,17 @@ fn start_recording(
         return Err("At least one audio source must be selected".to_string());
     }
 
-    let has_pipewire = state.pipewire.lock().unwrap().is_some();
+    let has_backend = state.audio_backend.lock().unwrap().is_some();
     
-    if has_pipewire {
-        let source1: Option<u32> = source1_id.as_ref().and_then(|s| s.parse().ok());
-        let source2: Option<u32> = source2_id.as_ref().and_then(|s| s.parse().ok());
-        
+    if has_backend {
         // Initialize recording state
         let sample_rate = {
-            let pw = state.pipewire.lock().unwrap();
-            pw.as_ref().map(|p| p.sample_rate()).unwrap_or(48000)
+            let backend = state.audio_backend.lock().unwrap();
+            backend.as_ref().map(|b| b.sample_rate()).unwrap_or(48000)
         };
         
         // Determine source type based on what's selected
-        let source_type = match (source1.is_some(), source2.is_some()) {
+        let source_type = match (source1_id.is_some(), source2_id.is_some()) {
             (true, true) => AudioSourceType::Mixed,
             (true, false) => AudioSourceType::Input, // Could be either, doesn't matter
             (false, true) => AudioSourceType::Input,
@@ -162,11 +166,11 @@ fn start_recording(
             );
         }
         
-        // Start PipeWire capture with both sources
+        // Start capture with both sources
         {
-            let pw = state.pipewire.lock().unwrap();
-            if let Some(ref pw) = *pw {
-                pw.start_capture_sources(source1, source2)?;
+            let backend = state.audio_backend.lock().unwrap();
+            if let Some(ref backend) = *backend {
+                backend.start_capture_sources(source1_id.clone(), source2_id.clone())?;
             }
         }
         
@@ -174,14 +178,14 @@ fn start_recording(
         *state.processing_active.lock().unwrap() = true;
         start_audio_processing_thread(
             state.recording.clone(),
-            Arc::clone(&state.pipewire),
+            Arc::clone(&state.audio_backend),
             Arc::clone(&state.processing_active),
             app_handle,
         );
         
         Ok(())
     } else {
-        Err("PipeWire not available".to_string())
+        Err("Audio backend not available".to_string())
     }
 }
 
@@ -191,13 +195,13 @@ fn stop_recording(
     app_handle: AppHandle,
     keep_monitoring: bool,
 ) -> Result<(), String> {
-    let has_pipewire = state.pipewire.lock().unwrap().is_some();
+    let has_backend = state.audio_backend.lock().unwrap().is_some();
     
-    if has_pipewire {
-        // Stop PipeWire capture if not keeping monitoring
+    if has_backend {
+        // Stop capture if not keeping monitoring
         if !keep_monitoring {
-            if let Some(ref pw) = *state.pipewire.lock().unwrap() {
-                pw.stop_capture()?;
+            if let Some(ref backend) = *state.audio_backend.lock().unwrap() {
+                backend.stop_capture()?;
             }
             *state.processing_active.lock().unwrap() = false;
         }
@@ -290,7 +294,7 @@ fn stop_recording(
         
         Ok(())
     } else {
-        Err("PipeWire not available".to_string())
+        Err("Audio backend not available".to_string())
     }
 }
 
@@ -312,19 +316,16 @@ fn start_monitor(
         return Err("At least one audio source must be selected".to_string());
     }
 
-    let has_pipewire = state.pipewire.lock().unwrap().is_some();
+    let has_backend = state.audio_backend.lock().unwrap().is_some();
     
-    if has_pipewire {
-        let source1: Option<u32> = source1_id.as_ref().and_then(|s| s.parse().ok());
-        let source2: Option<u32> = source2_id.as_ref().and_then(|s| s.parse().ok());
-        
+    if has_backend {
         // Initialize state
         let sample_rate = {
-            let pw = state.pipewire.lock().unwrap();
-            pw.as_ref().map(|p| p.sample_rate()).unwrap_or(48000)
+            let backend = state.audio_backend.lock().unwrap();
+            backend.as_ref().map(|b| b.sample_rate()).unwrap_or(48000)
         };
         
-        let source_type = match (source1.is_some(), source2.is_some()) {
+        let source_type = match (source1_id.is_some(), source2_id.is_some()) {
             (true, true) => AudioSourceType::Mixed,
             _ => AudioSourceType::Input,
         };
@@ -341,11 +342,11 @@ fn start_monitor(
             );
         }
         
-        // Start PipeWire capture with both sources
+        // Start capture with both sources
         {
-            let pw = state.pipewire.lock().unwrap();
-            if let Some(ref pw) = *pw {
-                pw.start_capture_sources(source1, source2)?;
+            let backend = state.audio_backend.lock().unwrap();
+            if let Some(ref backend) = *backend {
+                backend.start_capture_sources(source1_id.clone(), source2_id.clone())?;
             }
         }
         
@@ -353,28 +354,28 @@ fn start_monitor(
         *state.processing_active.lock().unwrap() = true;
         start_audio_processing_thread(
             state.recording.clone(),
-            Arc::clone(&state.pipewire),
+            Arc::clone(&state.audio_backend),
             Arc::clone(&state.processing_active),
             app_handle,
         );
         
         Ok(())
     } else {
-        Err("PipeWire not available".to_string())
+        Err("Audio backend not available".to_string())
     }
 }
 
 #[tauri::command]
 fn stop_monitor(state: State<AppState>) -> Result<(), String> {
-    let has_pipewire = state.pipewire.lock().unwrap().is_some();
+    let has_backend = state.audio_backend.lock().unwrap().is_some();
     
-    if has_pipewire {
+    if has_backend {
         // Stop processing thread
         *state.processing_active.lock().unwrap() = false;
         
-        // Stop PipeWire capture
-        if let Some(ref pw) = *state.pipewire.lock().unwrap() {
-            pw.stop_capture()?;
+        // Stop capture
+        if let Some(ref backend) = *state.audio_backend.lock().unwrap() {
+            backend.stop_capture()?;
         }
         
         // Update state
@@ -388,7 +389,7 @@ fn stop_monitor(state: State<AppState>) -> Result<(), String> {
         
         Ok(())
     } else {
-        Err("PipeWire not available".to_string())
+        Err("Audio backend not available".to_string())
     }
 }
 
@@ -458,14 +459,14 @@ pub fn run() {
     // Create shared recording mode
     let recording_mode = Arc::new(Mutex::new(RecordingMode::Mixed));
     
-    // Initialize PipeWire backend with shared flags
-    let pipewire = match PipeWireBackend::new(Arc::clone(&aec_enabled), Arc::clone(&recording_mode)) {
-        Ok(pw) => {
-            println!("PipeWire audio backend initialized");
-            Some(pw)
+    // Initialize platform-specific audio backend with shared flags
+    let audio_backend = match create_backend(Arc::clone(&aec_enabled), Arc::clone(&recording_mode)) {
+        Ok(backend) => {
+            println!("Audio backend initialized");
+            Some(backend)
         }
         Err(e) => {
-            eprintln!("Failed to initialize PipeWire: {}", e);
+            eprintln!("Failed to initialize audio backend: {}", e);
             None
         }
     };
@@ -474,7 +475,7 @@ pub fn run() {
         .manage(AppState {
             recording: RecordingState::new(),
             transcriber: Mutex::new(Transcriber::new()),
-            pipewire: Arc::new(Mutex::new(pipewire)),
+            audio_backend: Arc::new(Mutex::new(audio_backend)),
             processing_active: Arc::new(Mutex::new(false)),
             aec_enabled,
             recording_mode,
