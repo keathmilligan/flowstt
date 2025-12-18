@@ -152,9 +152,11 @@ h2 {
 
 .speech-activity-legend {
   display: flex;
-  gap: 1rem;
-  font-size: 0.7rem;
+  gap: 0.5rem;
+  font-size: 0.65rem;
   color: #888;
+  flex-shrink: 0;
+  padding-right: 8px;
 }
 
 .legend-item {
@@ -185,17 +187,23 @@ h2 {
   align-items: center;
   flex-shrink: 0;
   padding: 0.1rem 0;
+  overflow: hidden;
 }
 
 .status {
   text-align: left;
   line-height: 1.25rem;
-  color: #aaa;
+  color: #396cd8;
   font-size: 0.85rem;
+  padding-left: 8px;
 }
 
-.status.loading {
-  color: #396cd8;
+.status.progress {
+  color: #28a745;
+}
+
+.status.warning {
+  color: #ffc107;
 }
 
 .status.error {
@@ -206,21 +214,21 @@ h2 {
 .transcription-area {
   display: flex;
   flex-direction: column;
-  flex: 0.5;
-  min-height: 40px;
+  flex: 0.8;
+  min-height: 60px;
 }
 
 .result-box {
   padding: 0.75rem;
   border-radius: 6px;
   border: 1px solid #3a4555;
-  background-color: #0d1117;
+  background-color: var(--waveform-bg);
   color: #f6f6f6;
   flex: 1;
-  min-height: 40px;
+  min-height: 60px;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow-y: auto;
+  overflow: hidden;
   font-size: 0.9rem;
 }
 
@@ -243,18 +251,19 @@ h2 {
 .device-selector {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.1rem;
   flex: 1;
   min-width: 0;
 }
 
 .source-selector label,
 .device-selector label {
-  font-size: 0.7rem;
+  font-size: 0.6rem;
   font-weight: 500;
-  color: #888;
+  color: #666;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  margin-left: 0.25rem;
 }
 
 select {
@@ -283,9 +292,8 @@ select option {
 .control-buttons {
   display: flex;
   gap: 0.75rem;
-  align-items: center;
+  align-items: flex-end;
   flex-shrink: 0;
-  padding-bottom: 0.1rem;
 }
 
 button {
@@ -389,15 +397,16 @@ button.recording:hover {
 .mode-selector {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.1rem;
 }
 
 .mode-selector label {
-  font-size: 0.7rem;
+  font-size: 0.6rem;
   font-weight: 500;
-  color: #888;
+  color: #666;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  margin-left: 0.25rem;
 }
 
 .mode-selector select {

@@ -1335,7 +1335,7 @@ async function downloadModel() {
   }
 }
 
-function setStatus(message: string, type: "normal" | "loading" | "error" = "normal") {
+function setStatus(message: string, type: "normal" | "progress" | "warning" | "error" = "normal") {
   if (statusEl) {
     statusEl.textContent = message;
     statusEl.className = "status";
@@ -1379,7 +1379,7 @@ async function setupTranscriptionListeners() {
       resultEl.textContent = event.payload;
     }
     if (isMonitoring) {
-      setStatus("Monitoring...", "loading");
+      setStatus("Monitoring...", "progress");
     } else {
       setStatus("Transcription complete");
     }
@@ -1541,7 +1541,7 @@ function updateStatusForCurrentState() {
   } else {
     statusText = "";
   }
-  setStatus(statusText, statusText ? "loading" : "normal");
+  setStatus(statusText, statusText ? "progress" : "normal");
 }
 
 async function toggleMonitor() {
@@ -1623,7 +1623,7 @@ async function toggleRecording() {
       }
 
       if (wasMonitoringBeforeRecording) {
-        setStatus("Transcribing... (monitoring continues)", "loading");
+        setStatus("Transcribing... (monitoring continues)", "progress");
       } else {
         isMonitoring = false;
         waveformRenderer?.stop();
@@ -1633,7 +1633,7 @@ async function toggleRecording() {
         speechActivityRenderer?.stop();
         speechActivityRenderer?.clear();
         await cleanupVisualizationListener();
-        setStatus("Transcribing...", "loading");
+        setStatus("Transcribing...", "progress");
       }
 
       if (resultEl) {
