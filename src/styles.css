@@ -1,3 +1,12 @@
+/* Fira Mono font for transcription display */
+@font-face {
+  font-family: 'Fira Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/FiraMono-Regular.woff2') format('woff2');
+}
+
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
@@ -219,17 +228,62 @@ h2 {
 }
 
 .result-box {
-  padding: 0.75rem;
+  padding: 0;
   border-radius: 6px;
   border: 1px solid #3a4555;
   background-color: var(--waveform-bg);
-  color: #f6f6f6;
   flex: 1;
   min-height: 60px;
+  overflow: hidden;
+  position: relative;
+}
+
+.result-content {
+  padding: 0.75rem;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  /* Align text to bottom */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.result-text {
+  color: #7DD3FC;
+  font-family: 'Fira Mono', monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow: hidden;
-  font-size: 0.9rem;
+}
+
+/* Gradient overlay to fade out text at top */
+.result-fade {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4rem;
+  background: linear-gradient(to bottom, var(--waveform-bg) 0%, transparent 100%);
+  pointer-events: none;
+  border-radius: 5px 5px 0 0; /* Match inner corner radius */
+}
+
+/* Blinking cursor animation */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+.result-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.1em;
+  background-color: #7DD3FC;
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  animation: cursor-blink 1.2s ease-in-out infinite;
 }
 
 /* Bottom controls bar */

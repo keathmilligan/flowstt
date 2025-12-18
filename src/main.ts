@@ -1395,13 +1395,74 @@ async function cleanupVisualizationListener() {
   }
 }
 
+// Transcription text buffer - stores accumulated text
+let transcriptionBuffer = "";
+
+// Update display with text and cursor
+function updateTranscriptionDisplay(): void {
+  if (!resultEl) return;
+  
+  // Clear and rebuild content with cursor
+  resultEl.innerHTML = "";
+  
+  // Create wrapper for text content (allows flex bottom-align while keeping inline flow)
+  const textWrapper = document.createElement("span");
+  textWrapper.className = "result-text";
+  
+  // Add text
+  if (transcriptionBuffer.length > 0) {
+    textWrapper.appendChild(document.createTextNode(transcriptionBuffer));
+  }
+  
+  // Add blinking block cursor inline with text
+  const cursor = document.createElement("span");
+  cursor.className = "result-cursor";
+  textWrapper.appendChild(cursor);
+  
+  resultEl.appendChild(textWrapper);
+  
+  // Auto-scroll to bottom (ensure newest text is visible)
+  resultEl.scrollTop = resultEl.scrollHeight;
+}
+
+// Append transcription text and manage buffer
+function appendTranscription(newText: string): void {
+  if (!resultEl) return;
+  
+  // Trim the new text and skip if empty
+  const trimmedText = newText.trim();
+  if (!trimmedText) return;
+  
+  // Append with space separator (no line breaks)
+  if (transcriptionBuffer.length > 0) {
+    transcriptionBuffer += " " + trimmedText;
+  } else {
+    transcriptionBuffer = trimmedText;
+  }
+  
+  // Truncate to keep buffer from growing indefinitely
+  // Keep enough text to fill the panel with overflow for clipping effect
+  // ~80 chars per line, ~20 lines = ~1600 chars max
+  const maxChars = 2000;
+  if (transcriptionBuffer.length > maxChars) {
+    // Find a word boundary to truncate at
+    const startIndex = transcriptionBuffer.length - maxChars;
+    const spaceIndex = transcriptionBuffer.indexOf(" ", startIndex);
+    if (spaceIndex !== -1) {
+      transcriptionBuffer = transcriptionBuffer.substring(spaceIndex + 1);
+    } else {
+      transcriptionBuffer = transcriptionBuffer.substring(startIndex);
+    }
+  }
+  
+  updateTranscriptionDisplay();
+}
+
 async function setupTranscriptionListeners() {
   if (transcriptionCompleteUnlisten) return;
 
   transcriptionCompleteUnlisten = await listen<string>("transcription-complete", (event) => {
-    if (resultEl) {
-      resultEl.textContent = event.payload;
-    }
+    appendTranscription(event.payload);
     if (isMonitoring) {
       setStatus("Monitoring...", "progress");
     } else {
@@ -1660,10 +1721,6 @@ async function toggleRecording() {
         setStatus("Transcribing...", "progress");
       }
 
-      if (resultEl) {
-        resultEl.textContent = "Processing audio...";
-      }
-      
       wasMonitoringBeforeRecording = false;
     } catch (error) {
       console.error("Stop recording error:", error);
@@ -1730,10 +1787,6 @@ async function toggleRecording() {
         speechActivityRenderer?.clear();
       }
       speechActivityRenderer?.start();
-
-      if (resultEl) {
-        resultEl.textContent = "Recording in progress...";
-      }
     } catch (error) {
       console.error("Start recording error:", error);
       setStatus(`Error: ${error}`, "error");
