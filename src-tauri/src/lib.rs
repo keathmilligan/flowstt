@@ -138,6 +138,9 @@ fn start_recording(
     let has_backend = state.audio_backend.lock().unwrap().is_some();
     
     if has_backend {
+        // Check if processing thread is already running
+        let was_already_active = *state.processing_active.lock().unwrap();
+        
         // Initialize recording state
         let sample_rate = {
             let backend = state.audio_backend.lock().unwrap();
@@ -168,7 +171,8 @@ fn start_recording(
             );
         }
         
-        // Start capture with both sources
+        // Start/restart capture with both sources
+        // The backend handles restarts internally by stopping old capture first
         {
             let backend = state.audio_backend.lock().unwrap();
             if let Some(ref backend) = *backend {
@@ -176,14 +180,17 @@ fn start_recording(
             }
         }
         
-        // Start processing thread if not already running
-        *state.processing_active.lock().unwrap() = true;
-        start_audio_processing_thread(
-            state.recording.clone(),
-            Arc::clone(&state.audio_backend),
-            Arc::clone(&state.processing_active),
-            app_handle,
-        );
+        // Only start processing thread if not already running
+        // If already running, the thread will pick up samples from the restarted capture
+        if !was_already_active {
+            *state.processing_active.lock().unwrap() = true;
+            start_audio_processing_thread(
+                state.recording.clone(),
+                Arc::clone(&state.audio_backend),
+                Arc::clone(&state.processing_active),
+                app_handle,
+            );
+        }
         
         Ok(())
     } else {
@@ -321,6 +328,9 @@ fn start_monitor(
     let has_backend = state.audio_backend.lock().unwrap().is_some();
     
     if has_backend {
+        // Check if processing thread is already running
+        let was_already_active = *state.processing_active.lock().unwrap();
+        
         // Initialize state
         let sample_rate = {
             let backend = state.audio_backend.lock().unwrap();
@@ -344,7 +354,8 @@ fn start_monitor(
             );
         }
         
-        // Start capture with both sources
+        // Start/restart capture with both sources
+        // The backend handles restarts internally by stopping old capture first
         {
             let backend = state.audio_backend.lock().unwrap();
             if let Some(ref backend) = *backend {
@@ -352,14 +363,17 @@ fn start_monitor(
             }
         }
         
-        // Start processing thread
-        *state.processing_active.lock().unwrap() = true;
-        start_audio_processing_thread(
-            state.recording.clone(),
-            Arc::clone(&state.audio_backend),
-            Arc::clone(&state.processing_active),
-            app_handle,
-        );
+        // Only start processing thread if not already running
+        // If already running, the thread will pick up samples from the restarted capture
+        if !was_already_active {
+            *state.processing_active.lock().unwrap() = true;
+            start_audio_processing_thread(
+                state.recording.clone(),
+                Arc::clone(&state.audio_backend),
+                Arc::clone(&state.processing_active),
+                app_handle,
+            );
+        }
         
         Ok(())
     } else {

@@ -1157,6 +1157,9 @@ async function loadDevices() {
       aecToggle.disabled = !hasDevices;
     }
     
+    // Sync AEC and mode state with backend
+    await syncBackendState();
+    
     // Update mode selector availability
     updateModeSelector();
   } catch (error) {
@@ -1168,6 +1171,27 @@ async function loadDevices() {
       source2Select.innerHTML = `<option value="">Error loading devices</option>`;
     }
     setStatus(`Error: ${error}`, "error");
+  }
+}
+
+// Sync frontend state with backend (AEC enabled, recording mode)
+async function syncBackendState() {
+  try {
+    // Sync AEC enabled state
+    const backendAecEnabled = await invoke<boolean>("is_aec_enabled");
+    isAecEnabled = backendAecEnabled;
+    if (aecToggle) {
+      aecToggle.checked = backendAecEnabled;
+    }
+    
+    // Sync recording mode
+    const backendMode = await invoke<RecordingMode>("get_recording_mode");
+    recordingMode = backendMode;
+    if (modeSelect) {
+      modeSelect.value = backendMode;
+    }
+  } catch (error) {
+    console.error("Failed to sync backend state:", error);
   }
 }
 

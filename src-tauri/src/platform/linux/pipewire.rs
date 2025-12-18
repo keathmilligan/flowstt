@@ -171,11 +171,14 @@ pub fn create_backend(
 const AEC_FRAME_SAMPLES: usize = 480;
 
 /// Mixer state for combining audio from multiple streams
+/// Uses separate render-first AEC processing pattern for proper echo cancellation.
 struct AudioMixer {
-    /// Buffer for stream 1 samples (microphone/input)
-    buffer1: Vec<f32>,
-    /// Buffer for stream 2 samples (system audio/reference)
-    buffer2: Vec<f32>,
+    /// Buffer for capture samples (microphone/input)
+    capture_buffer: Vec<f32>,
+    /// Buffer for render samples (system audio/reference) - fed to AEC
+    render_buffer: Vec<f32>,
+    /// Buffer for render samples to mix with processed capture (for Mixed mode)
+    render_mix_buffer: Vec<f32>,
     /// Number of active streams (1 or 2)
     num_streams: usize,
     /// Channels per stream
@@ -197,8 +200,9 @@ impl AudioMixer {
         recording_mode: Arc<Mutex<RecordingMode>>,
     ) -> Self {
         Self {
-            buffer1: Vec::new(),
-            buffer2: Vec::new(),
+            capture_buffer: Vec::new(),
+            render_buffer: Vec::new(),
+            render_mix_buffer: Vec::new(),
             num_streams: 0,
             channels: 2,
             output_tx,
@@ -210,23 +214,26 @@ impl AudioMixer {
 
     fn set_num_streams(&mut self, num: usize) {
         self.num_streams = num;
-        self.buffer1.clear();
-        self.buffer2.clear();
+        self.capture_buffer.clear();
+        self.render_buffer.clear();
+        self.render_mix_buffer.clear();
         
-        // Create AEC3 pipeline when in mixed mode (2 streams)
+        // Create AEC3 pipeline when we have 2 streams (mic + system audio)
         if num == 2 {
+            // Initial delay hint: start with 0ms and let AEC adapt
             match VoipAec3::builder(48000, self.channels as usize, self.channels as usize)
                 .enable_high_pass(true)
+                .initial_delay_ms(0)
                 .build()
             {
                 Ok(aec) => {
-                    println!("AEC3 initialized: 48kHz, {} channels, {}ms frames", 
+                    println!("PipeWire: AEC3 initialized: 48kHz, {} channels, {}ms frames", 
                         self.channels, 
                         AEC_FRAME_SAMPLES * 1000 / 48000);
                     self.aec = Some(aec);
                 }
                 Err(e) => {
-                    eprintln!("Failed to initialize AEC3: {:?}", e);
+                    eprintln!("PipeWire: Failed to initialize AEC3: {:?}", e);
                     self.aec = None;
                 }
             }
@@ -239,105 +246,103 @@ impl AudioMixer {
         self.channels = channels;
     }
 
-    /// Add samples from stream 1 (microphone/input device)
-    fn push_stream1(&mut self, samples: &[f32]) {
+    /// Add samples from a stream, routing based on source type
+    /// - Sink capture (system audio) is fed IMMEDIATELY to AEC render path
+    /// - Input capture (mic) is buffered and processed when enough data available
+    fn push_samples(&mut self, samples: &[f32], is_sink_capture: bool) {
         if self.num_streams == 1 {
-            // Only one stream - send directly
+            // Only one stream - send directly (no AEC possible)
             let _ = self.output_tx.send(PwAudioSamples {
                 samples: samples.to_vec(),
                 channels: self.channels,
             });
+            return;
+        }
+
+        // Two streams mode
+        let frame_size = AEC_FRAME_SAMPLES * self.channels as usize;
+        
+        if is_sink_capture {
+            // System audio (render) - feed to AEC immediately in frame-sized chunks
+            // This is critical: AEC needs to see render BEFORE corresponding capture
+            self.render_buffer.extend_from_slice(samples);
+            // Also keep a copy for mixing in Mixed mode
+            self.render_mix_buffer.extend_from_slice(samples);
+            
+            // Feed render frames to AEC immediately
+            if let Some(ref mut aec) = self.aec {
+                while self.render_buffer.len() >= frame_size {
+                    let render_frame: Vec<f32> = self.render_buffer.drain(0..frame_size).collect();
+                    if let Err(e) = aec.handle_render_frame(&render_frame) {
+                        eprintln!("PipeWire: AEC3 handle_render_frame error: {:?}", e);
+                    }
+                }
+            }
         } else {
-            // Two streams - buffer and mix
-            self.buffer1.extend_from_slice(samples);
-            self.try_mix_and_send();
+            // Microphone (capture) - buffer and process
+            self.capture_buffer.extend_from_slice(samples);
+            self.process_capture();
         }
     }
 
-    /// Add samples from stream 2 (system audio/reference)
-    fn push_stream2(&mut self, samples: &[f32]) {
-        if self.num_streams <= 1 {
-            return; // Shouldn't happen, but ignore
-        }
-        self.buffer2.extend_from_slice(samples);
-        self.try_mix_and_send();
-    }
-
-    /// Try to mix available samples and send
-    fn try_mix_and_send(&mut self) {
+    /// Process buffered capture samples through AEC
+    fn process_capture(&mut self) {
         let aec_enabled = *self.aec_enabled.lock().unwrap();
         let recording_mode = *self.recording_mode.lock().unwrap();
         
-        // AEC3 requires exactly frame_samples * channels samples per frame
         let frame_size = AEC_FRAME_SAMPLES * self.channels as usize;
         
-        // Always process in frame-sized chunks for consistent output rate
-        // This ensures visualization scroll rate is the same regardless of AEC state
-        let min_samples = frame_size;
-        
-        // Process frames while we have enough data
-        while self.buffer1.len() >= min_samples && self.buffer2.len() >= min_samples {
-            let process_count = frame_size;
-            
-            if process_count == 0 {
-                break;
-            }
-            
-            // Extract interleaved samples to process
-            let mic_samples: Vec<f32> = self.buffer1.drain(0..process_count).collect();
-            let ref_samples: Vec<f32> = self.buffer2.drain(0..process_count).collect();
-            
-            // Apply AEC if enabled
-            let processed_mic = if aec_enabled {
+        // Process capture frames when we have enough data from both sources
+        while self.capture_buffer.len() >= frame_size && self.render_mix_buffer.len() >= frame_size {
+            let capture_frame: Vec<f32> = self.capture_buffer.drain(0..frame_size).collect();
+            let render_frame: Vec<f32> = self.render_mix_buffer.drain(0..frame_size).collect();
+
+            // Apply AEC if enabled and we have an AEC instance
+            let processed_capture = if aec_enabled {
                 if let Some(ref mut aec) = self.aec {
-                    let mut out = vec![0.0f32; mic_samples.len()];
-                    
-                    // Process capture (mic) with render (system audio) as reference
-                    // The render frame is what's being played through speakers
-                    // The capture frame is what the mic picks up (including echo)
-                    match aec.process(&mic_samples, Some(&ref_samples), false, &mut out) {
+                    let mut out = vec![0.0f32; capture_frame.len()];
+
+                    match aec.process_capture_frame(&capture_frame, false, &mut out) {
                         Ok(_metrics) => out,
                         Err(e) => {
-                            eprintln!("AEC3 process error: {:?}", e);
-                            mic_samples
+                            eprintln!("PipeWire: AEC3 process_capture_frame error: {:?}", e);
+                            capture_frame
                         }
                     }
                 } else {
-                    mic_samples
+                    capture_frame
                 }
             } else {
-                mic_samples
+                capture_frame
             };
             
             // Generate output based on recording mode
             let output: Vec<f32> = match recording_mode {
                 RecordingMode::Mixed => {
-                    // Mix processed mic with system audio (0.5 gain each to prevent clipping)
-                    processed_mic.iter()
-                        .zip(ref_samples.iter())
+                    // Mix processed capture with system audio (0.5 gain each to prevent clipping)
+                    processed_capture.iter()
+                        .zip(render_frame.iter())
                         .map(|(&s1, &s2)| (s1 + s2) * 0.5)
                         .collect()
                 }
                 RecordingMode::EchoCancel => {
-                    // Output only the processed (or raw) mic signal - no mixing
-                    // This should NOT contain any system audio
-                    processed_mic
+                    // Output only the processed capture signal - no mixing
+                    processed_capture
                 }
             };
             
-            // Debug: log RMS levels to verify which audio is in output
+            // Debug logging
             static LOG_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             let count = LOG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if count % 500 == 0 {
-                // Note: processed_mic may be different from original mic_samples if AEC applied
-                let ref_rms: f32 = if !ref_samples.is_empty() {
-                    (ref_samples.iter().map(|s| s * s).sum::<f32>() / ref_samples.len() as f32).sqrt()
+                let render_rms: f32 = if !render_frame.is_empty() {
+                    (render_frame.iter().map(|s| s * s).sum::<f32>() / render_frame.len() as f32).sqrt()
                 } else { 0.0 };
                 let out_rms: f32 = if !output.is_empty() {
                     (output.iter().map(|s| s * s).sum::<f32>() / output.len() as f32).sqrt()
                 } else { 0.0 };
-                println!("AudioMixer: mode={:?}, aec={}, ref_rms={:.4}, out_rms={:.4}", 
-                    recording_mode, aec_enabled, ref_rms, out_rms);
+                println!("PipeWire AudioMixer: mode={:?}, aec={}, render_rms={:.4}, out_rms={:.4}", 
+                    recording_mode, aec_enabled, render_rms, out_rms);
             }
             
             // Send output
@@ -673,13 +678,11 @@ fn create_capture_stream(
                         .collect();
 
                     if !samples.is_empty() {
-                        // Send to appropriate mixer buffer based on stream index
+                        // Route to appropriate mixer buffer based on source type:
+                        // - Sink capture (system audio) goes to reference buffer for AEC
+                        // - Input capture (mic) goes to capture buffer for AEC
                         let mut mixer = mixer_for_process.borrow_mut();
-                        if stream_index == 1 {
-                            mixer.push_stream1(&samples);
-                        } else {
-                            mixer.push_stream2(&samples);
-                        }
+                        mixer.push_samples(&samples, capture_sink);
                     }
                 }
             }

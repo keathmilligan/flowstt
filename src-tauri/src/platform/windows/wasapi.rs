@@ -57,6 +57,8 @@ struct WasapiAudioSamples {
 struct StreamSamples {
     stream_index: usize,
     samples: Vec<f32>,
+    /// Whether this stream is loopback (system audio) - used for AEC routing
+    is_loopback: bool,
 }
 
 /// Commands sent to the capture thread
@@ -341,10 +343,12 @@ fn pwstr_to_string(pwstr: PWSTR) -> String {
 /// Note: This struct is NOT Send because VoipAec3 is not Send.
 /// It must be used only in the main capture thread.
 struct AudioMixer {
-    /// Buffer for stream 1 samples (typically microphone/input)
-    buffer1: Vec<f32>,
-    /// Buffer for stream 2 samples (typically system audio/reference)
-    buffer2: Vec<f32>,
+    /// Buffer for capture samples (microphone/input)
+    capture_buffer: Vec<f32>,
+    /// Buffer for render samples (system audio/reference) - fed to AEC and kept for mixing
+    render_buffer: Vec<f32>,
+    /// Buffer for render samples to mix with processed capture (for Mixed mode)
+    render_mix_buffer: Vec<f32>,
     /// Number of active streams (1 or 2)
     num_streams: usize,
     /// Channels per stream
@@ -366,8 +370,9 @@ impl AudioMixer {
         recording_mode: Arc<Mutex<RecordingMode>>,
     ) -> Self {
         Self {
-            buffer1: Vec::new(),
-            buffer2: Vec::new(),
+            capture_buffer: Vec::new(),
+            render_buffer: Vec::new(),
+            render_mix_buffer: Vec::new(),
             num_streams: 0,
             channels: 2,
             output_tx,
@@ -379,13 +384,16 @@ impl AudioMixer {
 
     fn set_num_streams(&mut self, num: usize) {
         self.num_streams = num;
-        self.buffer1.clear();
-        self.buffer2.clear();
+        self.capture_buffer.clear();
+        self.render_buffer.clear();
+        self.render_mix_buffer.clear();
 
-        // Create AEC3 pipeline when in mixed mode (2 streams)
+        // Create AEC3 pipeline when we have 2 streams (mic + system audio)
         if num == 2 {
+            // Initial delay hint: start with 0ms and let AEC adapt (it has internal delay estimation)
             match VoipAec3::builder(48000, self.channels as usize, self.channels as usize)
                 .enable_high_pass(true)
+                .initial_delay_ms(0)
                 .build()
             {
                 Ok(aec) => {
@@ -406,71 +414,84 @@ impl AudioMixer {
         }
     }
 
-    /// Add samples from stream 1 (microphone/input device)
-    fn push_stream1(&mut self, samples: &[f32]) {
+    /// Add samples from a stream, routing based on source type
+    /// - Loopback (system audio) is fed IMMEDIATELY to AEC render path
+    /// - Non-loopback (mic) is buffered and processed when enough data available
+    fn push_samples(&mut self, samples: &[f32], is_loopback: bool) {
         if self.num_streams == 1 {
-            // Single stream - send directly
+            // Single stream - send directly (no AEC possible)
             let _ = self.output_tx.send(WasapiAudioSamples {
                 samples: samples.to_vec(),
                 channels: self.channels,
             });
-        } else {
-            // Two streams - buffer and mix
-            self.buffer1.extend_from_slice(samples);
-            self.try_mix_and_send();
-        }
-    }
-
-    /// Add samples from stream 2 (system audio/reference)
-    fn push_stream2(&mut self, samples: &[f32]) {
-        if self.num_streams <= 1 {
             return;
         }
-        self.buffer2.extend_from_slice(samples);
-        self.try_mix_and_send();
+
+        // Two streams mode
+        let frame_size = AEC_FRAME_SAMPLES * self.channels as usize;
+        
+        if is_loopback {
+            // System audio (render) - feed to AEC immediately in frame-sized chunks
+            // This is critical: AEC needs to see render BEFORE corresponding capture
+            self.render_buffer.extend_from_slice(samples);
+            // Also keep a copy for mixing in Mixed mode
+            self.render_mix_buffer.extend_from_slice(samples);
+            
+            // Feed render frames to AEC immediately
+            if let Some(ref mut aec) = self.aec {
+                while self.render_buffer.len() >= frame_size {
+                    let render_frame: Vec<f32> = self.render_buffer.drain(0..frame_size).collect();
+                    if let Err(e) = aec.handle_render_frame(&render_frame) {
+                        eprintln!("WASAPI: AEC3 handle_render_frame error: {:?}", e);
+                    }
+                }
+            }
+        } else {
+            // Microphone (capture) - buffer and process
+            self.capture_buffer.extend_from_slice(samples);
+            self.process_capture();
+        }
     }
 
-    /// Try to mix available samples and send
-    fn try_mix_and_send(&mut self) {
+    /// Process buffered capture samples through AEC
+    fn process_capture(&mut self) {
         let aec_enabled = *self.aec_enabled.lock().unwrap();
         let recording_mode = *self.recording_mode.lock().unwrap();
 
-        // AEC3 requires exactly frame_samples * channels samples per frame
         let frame_size = AEC_FRAME_SAMPLES * self.channels as usize;
 
-        // Process frames while we have enough data
-        while self.buffer1.len() >= frame_size && self.buffer2.len() >= frame_size {
-            // Extract interleaved samples to process
-            let mic_samples: Vec<f32> = self.buffer1.drain(0..frame_size).collect();
-            let ref_samples: Vec<f32> = self.buffer2.drain(0..frame_size).collect();
+        // Process capture frames when we have enough data from both sources
+        while self.capture_buffer.len() >= frame_size && self.render_mix_buffer.len() >= frame_size {
+            let capture_frame: Vec<f32> = self.capture_buffer.drain(0..frame_size).collect();
+            let render_frame: Vec<f32> = self.render_mix_buffer.drain(0..frame_size).collect();
 
-            // Apply AEC if enabled
-            let processed_mic = if aec_enabled {
+            // Apply AEC if enabled and we have an AEC instance
+            let processed_capture = if aec_enabled {
                 if let Some(ref mut aec) = self.aec {
-                    let mut out = vec![0.0f32; mic_samples.len()];
+                    let mut out = vec![0.0f32; capture_frame.len()];
 
-                    match aec.process(&mic_samples, Some(&ref_samples), false, &mut out) {
+                    match aec.process_capture_frame(&capture_frame, false, &mut out) {
                         Ok(_metrics) => out,
                         Err(e) => {
-                            eprintln!("WASAPI: AEC3 process error: {:?}", e);
-                            mic_samples
+                            eprintln!("WASAPI: AEC3 process_capture_frame error: {:?}", e);
+                            capture_frame
                         }
                     }
                 } else {
-                    mic_samples
+                    capture_frame
                 }
             } else {
-                mic_samples
+                capture_frame
             };
 
             // Generate output based on recording mode
             let output: Vec<f32> = match recording_mode {
                 RecordingMode::Mixed => {
-                    // Mix processed mic with system audio
-                    // Use soft clipping to handle peaks instead of reducing overall gain
-                    processed_mic
+                    // Mix processed capture with system audio
+                    // Use soft clipping to handle peaks
+                    processed_capture
                         .iter()
-                        .zip(ref_samples.iter())
+                        .zip(render_frame.iter())
                         .map(|(&s1, &s2)| {
                             let sum = s1 + s2;
                             // Soft clip: tanh-style saturation for values beyond [-1, 1]
@@ -485,8 +506,8 @@ impl AudioMixer {
                         .collect()
                 }
                 RecordingMode::EchoCancel => {
-                    // Output only the processed mic signal - no mixing
-                    processed_mic
+                    // Output only the processed capture signal - no mixing
+                    processed_capture
                 }
             };
 
@@ -494,8 +515,8 @@ impl AudioMixer {
             static LOG_COUNTER: AtomicU32 = AtomicU32::new(0);
             let count = LOG_COUNTER.fetch_add(1, Ordering::Relaxed);
             if count % 500 == 0 {
-                let ref_rms: f32 = if !ref_samples.is_empty() {
-                    (ref_samples.iter().map(|s| s * s).sum::<f32>() / ref_samples.len() as f32)
+                let render_rms: f32 = if !render_frame.is_empty() {
+                    (render_frame.iter().map(|s| s * s).sum::<f32>() / render_frame.len() as f32)
                         .sqrt()
                 } else {
                     0.0
@@ -506,8 +527,8 @@ impl AudioMixer {
                     0.0
                 };
                 println!(
-                    "WASAPI AudioMixer: mode={:?}, aec={}, ref_rms={:.4}, out_rms={:.4}",
-                    recording_mode, aec_enabled, ref_rms, out_rms
+                    "WASAPI AudioMixer: mode={:?}, aec={}, render_rms={:.4}, out_rms={:.4}",
+                    recording_mode, aec_enabled, render_rms, out_rms
                 );
             }
 
@@ -559,12 +580,9 @@ fn run_capture_thread(
 
         loop {
             // Process any samples from stream threads first
+            // Route based on source type (loopback vs mic), not stream index
             while let Ok(stream_samples) = stream_rx.try_recv() {
-                if stream_samples.stream_index == 1 {
-                    mixer.push_stream1(&stream_samples.samples);
-                } else {
-                    mixer.push_stream2(&stream_samples.samples);
-                }
+                mixer.push_samples(&stream_samples.samples, stream_samples.is_loopback);
             }
 
             let timeout = if capture_manager.is_some() {
@@ -758,7 +776,7 @@ fn run_stream_capture(
 
                 // Capture loop
                 while !stop_flag.load(Ordering::SeqCst) {
-                    if let Err(e) = process_capture(&mut state, stream_index, &stream_tx) {
+                    if let Err(e) = process_capture(&mut state, stream_index, is_loopback, &stream_tx) {
                         eprintln!("WASAPI: Stream {} capture error: {}", stream_index, e);
                         break;
                     }
@@ -926,6 +944,7 @@ fn parse_wave_format(format: &WAVEFORMATEX) -> Result<CaptureFormat, String> {
 unsafe fn process_capture(
     state: &mut CaptureState,
     stream_index: usize,
+    is_loopback: bool,
     stream_tx: &mpsc::Sender<StreamSamples>,
 ) -> Result<(), String> {
     let wait_result = WaitForSingleObject(state.event_handle, 10);
@@ -972,10 +991,11 @@ unsafe fn process_capture(
             final_samples
         };
 
-        // Send to mixer thread via channel
+        // Send to mixer thread via channel with loopback flag for proper AEC routing
         let _ = stream_tx.send(StreamSamples {
             stream_index,
             samples: stereo_samples,
+            is_loopback,
         });
     }
 
