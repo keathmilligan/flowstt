@@ -51,8 +51,8 @@ struct PwAudioSamples {
 pub struct PipeWireBackend {
     /// Channel to send commands to PipeWire thread
     cmd_tx: mpsc::Sender<PwCommand>,
-    /// Channel to receive audio samples
-    audio_rx: mpsc::Receiver<PwAudioSamples>,
+    /// Channel to receive audio samples (wrapped in Mutex for Sync)
+    audio_rx: Mutex<mpsc::Receiver<PwAudioSamples>>,
     /// Cached input devices
     input_devices: Arc<Mutex<Vec<PlatformAudioDevice>>>,
     /// Cached system devices
@@ -103,7 +103,7 @@ impl PipeWireBackend {
 
         Ok(Self {
             cmd_tx,
-            audio_rx,
+            audio_rx: Mutex::new(audio_rx),
             input_devices,
             system_devices,
             _thread_handle: thread_handle,
@@ -151,7 +151,7 @@ impl AudioBackend for PipeWireBackend {
     }
 
     fn try_recv(&self) -> Option<AudioSamples> {
-        self.audio_rx.try_recv().ok().map(|pw_samples| AudioSamples {
+        self.audio_rx.lock().unwrap().try_recv().ok().map(|pw_samples| AudioSamples {
             samples: pw_samples.samples,
             channels: pw_samples.channels,
         })

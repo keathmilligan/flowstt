@@ -58,12 +58,33 @@ Download a model from [whisper.cpp models](https://huggingface.co/ggerganov/whis
 - Rust, Node.js, pnpm, CMake, C/C++ compiler
 - **Linux**: `libasound2-dev` (Debian/Ubuntu) or `alsa-lib` (Arch)
 
+### CUDA Acceleration (Linux only)
+
+For GPU-accelerated transcription on Linux with NVIDIA GPUs, you can enable CUDA support:
+
+**Requirements:**
+- NVIDIA GPU with CUDA support
+- NVIDIA CUDA Toolkit (nvcc, cuBLAS) - typically version 11.x or 12.x
+- NVIDIA drivers with CUDA support
+
+**Build with CUDA:**
+```bash
+pnpm tauri build --features cuda
+# or for development:
+pnpm tauri dev --features cuda
+```
+
+**Troubleshooting CUDA builds:**
+- Ensure `nvcc` is in your PATH: `nvcc --version`
+- Install CUDA Toolkit: `sudo apt install nvidia-cuda-toolkit` (Debian/Ubuntu) or `sudo pacman -S cuda` (Arch)
+- If build fails with cuBLAS errors, ensure `libcublas` is installed
+
 ## Development
 
 ```bash
 pnpm install
-pnpm tauri dev      # development
-pnpm tauri build    # production
+pnpm tauri dev      # development (CPU-only)
+pnpm tauri build    # production (CPU-only)
 ```
 
 ## Tech Stack

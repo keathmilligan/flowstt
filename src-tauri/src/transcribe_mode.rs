@@ -260,6 +260,9 @@ impl TranscriptionQueue {
                         // Convert to format suitable for Whisper
                         match process_recorded_audio(raw_audio) {
                             Ok(processed) => {
+                                // Emit event that transcription is starting (GPU may be active)
+                                let _ = app_handle.emit("transcription-started", ());
+                                
                                 // Transcribe
                                 match transcriber.transcribe(&processed) {
                                     Ok(text) => {
@@ -269,6 +272,9 @@ impl TranscriptionQueue {
                                         let _ = app_handle.emit("transcription-error", e);
                                     }
                                 }
+                                
+                                // Emit event that transcription finished (GPU no longer active)
+                                let _ = app_handle.emit("transcription-finished", ());
                             }
                             Err(e) => {
                                 let _ = app_handle.emit("transcription-error", e);

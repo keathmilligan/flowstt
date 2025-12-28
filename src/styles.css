@@ -132,11 +132,94 @@ img {
   pointer-events: none;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-right: 2rem;
+}
+
 .app-version {
   font-size: 1rem;
   color: #888;
   font-weight: 500;
-  margin-right: 2rem;
+}
+
+/* Transcribing indicator */
+.transcribing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(100, 100, 100, 0.15);
+  border: 1px solid rgba(100, 100, 100, 0.4);
+  color: #888;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+}
+
+.transcribing-indicator.active {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #3b82f6;
+}
+
+.transcribing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #666;
+  transition: all 0.2s ease;
+}
+
+.transcribing-indicator.active .transcribing-dot {
+  background: #3b82f6;
+  animation: transcribe-pulse 1s ease-in-out infinite;
+}
+
+.transcribing-label {
+  line-height: 1;
+}
+
+@keyframes transcribe-pulse {
+  0%, 100% { 
+    opacity: 1;
+    box-shadow: 0 0 4px #3b82f6;
+  }
+  50% { 
+    opacity: 0.5;
+    box-shadow: 0 0 8px #3b82f6;
+  }
+}
+
+/* CUDA indicator */
+.cuda-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(118, 185, 0, 0.15);
+  border: 1px solid rgba(118, 185, 0, 0.4);
+  color: #76b900;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: relative;
+}
+
+.cuda-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.cuda-label {
+  line-height: 1;
 }
 
 h2 {

@@ -12,6 +12,11 @@ interface ModelStatus {
   path: string;
 }
 
+interface CudaStatus {
+  build_enabled: boolean;
+  runtime_available: boolean;
+}
+
 interface SpeechEventPayload {
   duration_ms: number | null;
   lookback_samples: number[] | null;
@@ -1137,6 +1142,13 @@ let speechStartedUnlisten: UnlistenFn | null = null;
 let speechEndedUnlisten: UnlistenFn | null = null;
 let recordingSavedUnlisten: UnlistenFn | null = null;
 let transcribeQueueUpdateUnlisten: UnlistenFn | null = null;
+let transcriptionStartedUnlisten: UnlistenFn | null = null;
+let transcriptionFinishedUnlisten: UnlistenFn | null = null;
+
+// CUDA and transcription status
+let cudaBuildEnabled = false;
+let cudaIndicator: HTMLElement | null = null;
+let transcribingIndicator: HTMLElement | null = null;
 
 async function loadDevices() {
   try {
@@ -1577,6 +1589,57 @@ function cleanupTranscriptionListeners() {
   }
 }
 
+// Check CUDA build status and show indicator if enabled
+async function checkCudaStatus() {
+  try {
+    const status = await invoke<CudaStatus>("get_cuda_status");
+    cudaBuildEnabled = status.build_enabled;
+    
+    if (cudaIndicator) {
+      if (status.build_enabled) {
+        cudaIndicator.classList.remove("hidden");
+        cudaIndicator.title = status.runtime_available 
+          ? "CUDA GPU Acceleration (Available)"
+          : "CUDA GPU Acceleration (Built-in, checking runtime...)";
+      } else {
+        cudaIndicator.classList.add("hidden");
+      }
+    }
+    
+    console.log(`CUDA status: build_enabled=${status.build_enabled}, runtime_available=${status.runtime_available}`);
+  } catch (error) {
+    console.error("Failed to check CUDA status:", error);
+  }
+}
+
+// Setup listeners for transcription active state
+async function setupTranscriptionActiveListeners() {
+  transcriptionStartedUnlisten = await listen("transcription-started", () => {
+    console.log(`[Transcription] Started (CUDA: ${cudaBuildEnabled})`);
+    if (transcribingIndicator) {
+      transcribingIndicator.classList.add("active");
+    }
+  });
+  
+  transcriptionFinishedUnlisten = await listen("transcription-finished", () => {
+    console.log(`[Transcription] Finished (CUDA: ${cudaBuildEnabled})`);
+    if (transcribingIndicator) {
+      transcribingIndicator.classList.remove("active");
+    }
+  });
+}
+
+function cleanupTranscriptionActiveListeners() {
+  if (transcriptionStartedUnlisten) {
+    transcriptionStartedUnlisten();
+    transcriptionStartedUnlisten = null;
+  }
+  if (transcriptionFinishedUnlisten) {
+    transcriptionFinishedUnlisten();
+    transcriptionFinishedUnlisten = null;
+  }
+}
+
 async function toggleAec() {
   if (!aecToggle) return;
 
@@ -1909,8 +1972,15 @@ window.addEventListener("DOMContentLoaded", () => {
     cleanupSpeechEventListeners();
     cleanupRecordingSavedListener();
     cleanupTranscribeQueueListener();
+    cleanupTranscriptionActiveListeners();
   });
 
+  // Initialize CUDA and transcription indicators
+  cudaIndicator = document.querySelector("#cuda-indicator");
+  transcribingIndicator = document.querySelector("#transcribing-indicator");
+  
   loadDevices();
   checkModelStatus();
+  checkCudaStatus();
+  setupTranscriptionActiveListeners();
 });

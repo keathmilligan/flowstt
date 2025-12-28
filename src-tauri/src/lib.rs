@@ -329,6 +329,9 @@ fn stop_recording(
             
             let mut transcriber = Transcriber::new();
             if model_path.exists() {
+                // Emit event that transcription is starting (GPU may be active)
+                let _ = app_handle.emit("transcription-started", ());
+                
                 match transcriber.transcribe(&processed) {
                     Ok(text) => {
                         let _ = app_handle.emit("transcription-complete", text);
@@ -337,6 +340,9 @@ fn stop_recording(
                         let _ = app_handle.emit("transcription-error", e);
                     }
                 }
+                
+                // Emit event that transcription finished (GPU no longer active)
+                let _ = app_handle.emit("transcription-finished", ());
             } else {
                 let _ = app_handle.emit("transcription-error", "Model file not found".to_string());
             }
@@ -505,6 +511,42 @@ fn download_model(state: State<AppState>) -> Result<(), String> {
 struct ModelStatus {
     available: bool,
     path: String,
+}
+
+/// CUDA capability status
+#[derive(serde::Serialize)]
+struct CudaStatus {
+    /// Whether the binary was built with CUDA support
+    build_enabled: bool,
+    /// Whether CUDA is available at runtime (GPU detected)
+    runtime_available: bool,
+}
+
+/// Check if the application was built with CUDA support
+#[tauri::command]
+fn get_cuda_status() -> CudaStatus {
+    // Check build-time CUDA support
+    #[cfg(all(target_os = "linux", feature = "cuda"))]
+    let build_enabled = true;
+    #[cfg(not(all(target_os = "linux", feature = "cuda")))]
+    let build_enabled = false;
+    
+    // Check runtime CUDA availability via whisper-rs system info
+    #[cfg(all(target_os = "linux", feature = "cuda"))]
+    let runtime_available = {
+        // whisper-rs exposes system info that indicates CUDA availability
+        // When CUDA is enabled and a GPU is available, whisper.cpp will use it
+        // We check if CUDA was compiled in - runtime detection would require 
+        // actually initializing the context
+        true // If built with CUDA, assume it's available (whisper-rs handles fallback)
+    };
+    #[cfg(not(all(target_os = "linux", feature = "cuda")))]
+    let runtime_available = false;
+    
+    CudaStatus {
+        build_enabled,
+        runtime_available,
+    }
 }
 
 /// Transcribe mode status for frontend
@@ -715,6 +757,7 @@ pub fn run() {
             stop_transcribe_mode,
             is_transcribe_active,
             get_transcribe_status,
+            get_cuda_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

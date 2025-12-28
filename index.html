@@ -14,7 +14,19 @@
     <main class="container" data-tauri-drag-region>
       <header class="app-header" data-tauri-drag-region>
         <img src="/src/assets/flowstt-landscape.svg" alt="FlowSTT" class="app-logo" />
-        <span class="app-version">v0.1.0</span>
+        <div class="header-right">
+          <div id="transcribing-indicator" class="transcribing-indicator" title="Transcription status">
+            <span class="transcribing-dot"></span>
+            <span class="transcribing-label">Transcribe</span>
+          </div>
+          <div id="cuda-indicator" class="cuda-indicator hidden" title="CUDA GPU Acceleration">
+            <svg class="cuda-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            </svg>
+            <span class="cuda-label">CUDA</span>
+          </div>
+          <span class="app-version">v0.1.0</span>
+        </div>
       </header>
 
       <div id="model-warning" class="warning hidden">
