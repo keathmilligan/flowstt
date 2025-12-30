@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/visualization.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlowSTT - Visualizations</title>
+    <script type="module" src="/src/visualization.ts" defer></script>
+  </head>
+
+  <body>
+    <div class="app-container" data-tauri-drag-region>
+    <button id="close-btn" class="close-btn" title="Close">&times;</button>
+    <main class="container" data-tauri-drag-region>
+      <div class="window-header" data-tauri-drag-region>
+        <span class="window-title">Audio Visualizations</span>
+      </div>
+      <div class="visualization-container">
+        <div class="visualization-row">
+          <div class="panel-wrapper">
+            <div class="panel-label">Waveform</div>
+            <div class="panel waveform-area">
+              <canvas id="waveform-canvas"></canvas>
+            </div>
+          </div>
+          <div class="panel-wrapper">
+            <div class="panel-label">Spectrogram</div>
+            <div class="panel spectrogram-area">
+              <canvas id="spectrogram-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="panel-wrapper speech-activity-wrapper">
+          <div class="panel-label">Speech Activity</div>
+          <div class="panel speech-activity-area">
+            <canvas id="speech-activity-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="status-legend-row" data-tauri-drag-region>
+        <div class="speech-activity-legend">
+          <span class="legend-item"><span class="legend-color" style="background: rgba(34, 197, 94, 0.5);"></span>Speaking</span>
+          <span class="legend-item"><span class="legend-color" style="background: rgb(245, 158, 11);"></span>Amplitude</span>
+          <span class="legend-item"><span class="legend-color" style="background: rgb(6, 182, 212);"></span>ZCR</span>
+          <span class="legend-item"><span class="legend-color" style="background: rgb(217, 70, 239);"></span>Centroid</span>
+        </div>
+      </div>
+    </main>
+    </div>
+  </body>
+</html>

@@ -14,13 +14,29 @@
     "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "FlowSTT",
         "width": 900,
-        "height": 650,
+        "height": 340,
         "resizable": false,
         "decorations": false,
         "transparent": true,
         "shadow": false
+      },
+      {
+        "label": "visualization",
+        "title": "FlowSTT Visualization",
+        "url": "visualization.html",
+        "width": 900,
+        "height": 700,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "visible": false,
+        "center": true
       }
     ],
     "security": {

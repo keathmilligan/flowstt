@@ -13,7 +13,10 @@
     <button id="close-btn" class="close-btn" title="Close">&times;</button>
     <main class="container" data-tauri-drag-region>
       <header class="app-header" data-tauri-drag-region>
-        <img src="/src/assets/flowstt-landscape.svg" alt="FlowSTT" class="app-logo" />
+        <div class="header-left">
+          <img src="/src/assets/flowstt-landscape.svg" alt="FlowSTT" class="app-logo" />
+          <canvas id="mini-waveform" class="mini-waveform" title="Double-click to open visualizations"></canvas>
+        </div>
         <div class="header-right">
           <div id="transcribing-indicator" class="transcribing-indicator" title="Transcription status">
             <span class="transcribing-dot"></span>
@@ -34,28 +37,8 @@
         <p id="download-status" class="download-status"></p>
       </div>
 
-      <div class="visualization-container">
-        <div class="visualization-row">
-          <div class="waveform-area">
-            <canvas id="waveform-canvas"></canvas>
-          </div>
-          <div class="spectrogram-area">
-            <canvas id="spectrogram-canvas"></canvas>
-          </div>
-        </div>
-        <div class="speech-activity-area">
-          <canvas id="speech-activity-canvas"></canvas>
-        </div>
-      </div>
-
-      <div class="status-legend-row" data-tauri-drag-region>
+      <div class="status-row" data-tauri-drag-region>
         <div id="status" class="status"></div>
-        <div class="speech-activity-legend">
-          <span class="legend-item"><span class="legend-color" style="background: rgba(34, 197, 94, 0.5);"></span>Speaking</span>
-          <span class="legend-item"><span class="legend-color" style="background: rgb(245, 158, 11);"></span>Amplitude</span>
-          <span class="legend-item"><span class="legend-color" style="background: rgb(6, 182, 212);"></span>ZCR</span>
-          <span class="legend-item"><span class="legend-color" style="background: rgb(217, 70, 239);"></span>Centroid</span>
-        </div>
       </div>
 
       <div class="transcription-area">
