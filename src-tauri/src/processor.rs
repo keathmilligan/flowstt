@@ -43,6 +43,15 @@ pub enum SpeechStateChange {
     Ended { duration_ms: u64 },
 }
 
+/// Word break event detected during speech
+#[derive(Clone, Debug)]
+pub struct WordBreakEvent {
+    /// Offset from speech start in milliseconds
+    pub offset_ms: u32,
+    /// Duration of the gap in milliseconds
+    pub gap_duration_ms: u32,
+}
+
 /// Speech detection metrics for visualization
 #[derive(Clone, Serialize)]
 pub struct SpeechMetrics {
@@ -177,6 +186,8 @@ pub struct SpeechDetector {
     word_break_start_speech_samples: u64,
     /// Whether last frame was a word break (for metrics)
     last_is_word_break: bool,
+    /// Last word break event detected (for transcribe mode integration)
+    last_word_break_event: Option<WordBreakEvent>,
 }
 
 impl SpeechDetector {
@@ -253,6 +264,7 @@ impl SpeechDetector {
             word_break_sample_count: 0,
             word_break_start_speech_samples: 0,
             last_is_word_break: false,
+            last_word_break_event: None,
         }
     }
 
@@ -488,6 +500,16 @@ impl SpeechDetector {
     pub fn peek_state_change(&self) -> &SpeechStateChange {
         &self.last_state_change
     }
+
+    /// Take the last word break event, resetting it to None.
+    pub fn take_word_break_event(&mut self) -> Option<WordBreakEvent> {
+        self.last_word_break_event.take()
+    }
+
+    /// Peek at the last word break event without taking it.
+    pub fn peek_word_break_event(&self) -> Option<&WordBreakEvent> {
+        self.last_word_break_event.as_ref()
+    }
     
     /// Update the running average of speech amplitude (call only during confirmed speech)
     fn update_speech_amplitude_average(&mut self, rms: f32, sample_count: u32) {
@@ -518,6 +540,7 @@ impl SpeechDetector {
         self.recent_speech_amplitude_sum = 0.0;
         self.recent_speech_amplitude_count = 0;
         self.last_is_word_break = false;
+        self.last_word_break_event = None;
     }
 }
 
@@ -525,6 +548,8 @@ impl AudioProcessor for SpeechDetector {
     fn process(&mut self, samples: &[f32], app_handle: &AppHandle) {
         // Reset state change at start of each process call
         self.last_state_change = SpeechStateChange::None;
+        // Reset word break event (will be set if a word break is detected this frame)
+        self.last_word_break_event = None;
         
         // Step 0: Add samples to lookback buffer (always, for retroactive analysis)
         self.push_to_lookback_buffer(samples);
@@ -594,6 +619,13 @@ impl AudioProcessor for SpeechDetector {
                             offset_ms,
                             gap_duration_ms,
                         });
+                        
+                        // Store for transcribe mode integration
+                        self.last_word_break_event = Some(WordBreakEvent {
+                            offset_ms,
+                            gap_duration_ms,
+                        });
+                        
                         println!("[SpeechDetector] Word break detected (offset: {}ms, gap: {}ms)", offset_ms, gap_duration_ms);
                     }
                     // Reset word break tracking

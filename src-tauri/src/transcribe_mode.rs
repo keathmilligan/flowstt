@@ -25,6 +25,20 @@ const OVERFLOW_THRESHOLD_PERCENT: usize = 90;
 /// Maximum queue size for transcription segments
 const MAX_QUEUE_SIZE: usize = 10;
 
+/// Maximum segment duration before seeking word break (2 seconds)
+const MAX_SEGMENT_DURATION_MS: u64 = 2000;
+
+/// Grace period after duration threshold before forcing segment submission (500ms)
+const WORD_BREAK_GRACE_MS: u64 = 500;
+
+/// Minimum segment duration to submit for transcription (200ms)
+/// Segments shorter than this are likely to produce [BLANK_AUDIO] from Whisper
+const MIN_SEGMENT_DURATION_MS: u64 = 200;
+
+/// Minimum RMS amplitude threshold for non-silent audio (linear scale)
+/// Approximately -40dB
+const MIN_AUDIO_RMS_THRESHOLD: f32 = 0.01;
+
 // ============================================================================
 // Segment Ring Buffer
 // ============================================================================
@@ -112,20 +126,32 @@ impl SegmentRingBuffer {
     /// Extract segment from start_idx to current write_pos, handling wraparound
     /// Returns a new Vec with the copied samples
     pub fn extract_segment(&self, start_idx: usize) -> Vec<f32> {
-        let segment_len = self.segment_length(start_idx);
+        self.extract_segment_to(start_idx, self.write_pos)
+    }
+
+    /// Extract segment from start_idx to a specific end_idx, handling wraparound
+    /// Returns a new Vec with the copied samples
+    pub fn extract_segment_to(&self, start_idx: usize, end_idx: usize) -> Vec<f32> {
+        // Calculate segment length handling wraparound
+        let segment_len = if end_idx >= start_idx {
+            end_idx - start_idx
+        } else {
+            (self.capacity - start_idx) + end_idx
+        };
+
         if segment_len == 0 {
             return Vec::new();
         }
 
         let mut result = Vec::with_capacity(segment_len);
 
-        if self.write_pos >= start_idx {
+        if end_idx >= start_idx {
             // No wraparound: simple slice copy
-            result.extend_from_slice(&self.buffer[start_idx..self.write_pos]);
+            result.extend_from_slice(&self.buffer[start_idx..end_idx]);
         } else {
-            // Wraparound: copy from start_idx to end, then from 0 to write_pos
+            // Wraparound: copy from start_idx to end, then from 0 to end_idx
             result.extend_from_slice(&self.buffer[start_idx..]);
-            result.extend_from_slice(&self.buffer[..self.write_pos]);
+            result.extend_from_slice(&self.buffer[..end_idx]);
         }
 
         result
@@ -318,7 +344,8 @@ impl Default for TranscriptionQueue {
 /// State for automatic transcription mode.
 /// 
 /// Manages the ring buffer, tracks speech segments, and coordinates
-/// with the transcription queue.
+/// with the transcription queue. Supports timed segment submission
+/// that breaks at word boundaries after a maximum duration.
 pub struct TranscribeState {
     /// Ring buffer for continuous audio capture
     pub ring_buffer: SegmentRingBuffer,
@@ -334,6 +361,15 @@ pub struct TranscribeState {
     pub channels: u16,
     /// Reference to the transcription queue
     pub transcription_queue: Arc<TranscriptionQueue>,
+    /// Number of samples in the current segment (for duration tracking)
+    /// This counts samples since speech was confirmed, NOT including lookback
+    segment_sample_count: u64,
+    /// Whether we're seeking a word break (duration threshold exceeded)
+    seeking_word_break: bool,
+    /// Sample count when we started seeking word break (for grace period)
+    word_break_seek_start_samples: u64,
+    /// Number of lookback samples at the start of the current segment
+    lookback_sample_count: usize,
 }
 
 impl TranscribeState {
@@ -347,6 +383,10 @@ impl TranscribeState {
             sample_rate: 48000,
             channels: 2,
             transcription_queue,
+            segment_sample_count: 0,
+            seeking_word_break: false,
+            word_break_seek_start_samples: 0,
+            lookback_sample_count: 0,
         }
     }
 
@@ -357,6 +397,10 @@ impl TranscribeState {
         self.ring_buffer.clear();
         self.in_speech = false;
         self.segment_start_idx = 0;
+        self.segment_sample_count = 0;
+        self.seeking_word_break = false;
+        self.word_break_seek_start_samples = 0;
+        self.lookback_sample_count = 0;
     }
 
     /// Activate transcribe mode
@@ -364,16 +408,21 @@ impl TranscribeState {
         self.is_active = true;
         self.in_speech = false;
         self.segment_start_idx = 0;
+        self.segment_sample_count = 0;
+        self.seeking_word_break = false;
+        self.word_break_seek_start_samples = 0;
+        self.lookback_sample_count = 0;
     }
 
     /// Deactivate transcribe mode
     pub fn deactivate(&mut self) {
         self.is_active = false;
         self.in_speech = false;
+        self.seeking_word_break = false;
     }
 
-    /// Process incoming audio samples - writes to ring buffer and checks for overflow
-    /// Returns Some(segment) if overflow extraction occurred
+    /// Process incoming audio samples - writes to ring buffer and checks for overflow/duration
+    /// Returns Some(segment) if overflow extraction or grace period extraction occurred
     pub fn process_samples(&mut self, samples: &[f32], app_handle: &AppHandle) -> Option<Vec<f32>> {
         if !self.is_active {
             return None;
@@ -386,6 +435,9 @@ impl TranscribeState {
             
             // Update segment start to current write position
             self.segment_start_idx = self.ring_buffer.write_position();
+            self.segment_sample_count = 0;
+            self.seeking_word_break = false;
+            self.lookback_sample_count = 0; // No lookback for continuation segments
             
             // Remain in speech state
             println!("[TranscribeState] Buffer overflow - extracted partial segment ({} samples)", segment.len());
@@ -397,6 +449,36 @@ impl TranscribeState {
 
         // Write samples to ring buffer (always happens)
         self.ring_buffer.write(samples);
+        
+        // Track segment duration if in speech
+        if self.in_speech {
+            self.segment_sample_count += samples.len() as u64;
+            
+            // Check if we've exceeded max duration and should start seeking word break
+            let duration_ms = self.samples_to_ms(self.segment_sample_count);
+            if !self.seeking_word_break && duration_ms >= MAX_SEGMENT_DURATION_MS {
+                self.seeking_word_break = true;
+                self.word_break_seek_start_samples = self.segment_sample_count;
+                println!(
+                    "[TranscribeState] Duration threshold reached ({}ms), seeking word break",
+                    duration_ms
+                );
+            }
+            
+            // Check for grace period expiration if seeking word break
+            if self.seeking_word_break {
+                let samples_since_seek = self.segment_sample_count - self.word_break_seek_start_samples;
+                let grace_ms = self.samples_to_ms(samples_since_seek);
+                
+                if grace_ms >= WORD_BREAK_GRACE_MS {
+                    // Grace period expired, force extraction
+                    let forced = self.force_segment_extraction(app_handle);
+                    if forced.is_some() {
+                        return forced;
+                    }
+                }
+            }
+        }
 
         // If we extracted a segment due to overflow, queue it
         if let Some(segment) = overflow_segment.clone() {
@@ -414,6 +496,11 @@ impl TranscribeState {
 
         self.in_speech = true;
         self.segment_start_idx = self.ring_buffer.index_from_lookback(lookback_samples);
+        // Start duration tracking from zero (lookback samples are pre-speech)
+        self.segment_sample_count = 0;
+        self.seeking_word_break = false;
+        // Remember lookback count for proper word break extraction
+        self.lookback_sample_count = lookback_samples;
         println!(
             "[TranscribeState] Speech started, segment_start_idx={}, lookback={}",
             self.segment_start_idx, lookback_samples
@@ -430,6 +517,9 @@ impl TranscribeState {
         let segment = self.ring_buffer.extract_segment(self.segment_start_idx);
         
         self.in_speech = false;
+        self.segment_sample_count = 0;
+        self.seeking_word_break = false;
+        self.lookback_sample_count = 0;
         
         if segment.is_empty() {
             println!("[TranscribeState] Speech ended but segment is empty");
@@ -438,15 +528,161 @@ impl TranscribeState {
 
         println!("[TranscribeState] Speech ended, extracted {} samples", segment.len());
 
-        // Queue the segment for transcription
+        // Queue the segment for transcription (will validate before actually queueing)
         self.queue_segment(segment.clone(), app_handle);
 
         Some(segment)
     }
 
+    /// Convert sample count to milliseconds
+    fn samples_to_ms(&self, samples: u64) -> u64 {
+        samples * 1000 / self.sample_rate as u64
+    }
+
+    /// Convert milliseconds to sample count
+    fn ms_to_samples(&self, ms: u64) -> u64 {
+        ms * self.sample_rate as u64 / 1000
+    }
+
+    /// Handle word-break event: if seeking a word break, extract and submit segment
+    /// 
+    /// Parameters:
+    /// - `offset_ms`: Offset from speech start where the word break occurred (from speech detector)
+    /// - `gap_duration_ms`: Duration of the gap in milliseconds
+    /// 
+    /// Returns Some(segment) if extraction occurred
+    pub fn on_word_break(&mut self, offset_ms: u32, gap_duration_ms: u32, app_handle: &AppHandle) -> Option<Vec<f32>> {
+        if !self.is_active || !self.in_speech || !self.seeking_word_break {
+            return None;
+        }
+
+        // The word break offset_ms is from when speech was confirmed (not including lookback)
+        // Our segment includes lookback samples at the start
+        // So we need to add lookback to get the correct extraction point
+        
+        // Calculate extraction point: midpoint of the word break gap, plus lookback
+        let gap_midpoint_ms = offset_ms as u64 + (gap_duration_ms as u64 / 2);
+        let gap_midpoint_samples = self.ms_to_samples(gap_midpoint_ms);
+        
+        // Total extraction length includes lookback samples
+        let extraction_length = self.lookback_sample_count as u64 + gap_midpoint_samples;
+        
+        // Ensure we don't extract more than we have in the segment
+        let total_segment_samples = self.lookback_sample_count as u64 + self.segment_sample_count;
+        let extraction_length = extraction_length.min(total_segment_samples);
+        
+        if extraction_length == 0 {
+            println!("[TranscribeState] Word break at offset {}ms but no samples to extract", offset_ms);
+            return None;
+        }
+
+        // Calculate extraction end index in ring buffer
+        let extraction_end_idx = (self.segment_start_idx + extraction_length as usize) % self.ring_buffer.capacity();
+
+        // Extract segment up to the word break point
+        let segment = self.extract_segment_to(extraction_end_idx);
+        
+        if segment.is_empty() {
+            println!("[TranscribeState] Word break extraction produced empty segment");
+            return None;
+        }
+
+        println!(
+            "[TranscribeState] Timed segment at word break (offset: {}ms, gap: {}ms), extracted {} samples ({} lookback + {} speech)",
+            offset_ms, gap_duration_ms, segment.len(), self.lookback_sample_count, gap_midpoint_samples
+        );
+
+        // Queue the segment for transcription (will validate before actually queueing)
+        self.queue_segment(segment.clone(), app_handle);
+
+        // Update state for next segment - the new segment starts at the extraction point
+        // No lookback for continuation segments (we already have the audio in the buffer)
+        self.segment_start_idx = extraction_end_idx;
+        self.lookback_sample_count = 0;
+        // Remaining samples in the segment
+        self.segment_sample_count = self.segment_sample_count.saturating_sub(gap_midpoint_samples);
+        self.seeking_word_break = false;
+
+        Some(segment)
+    }
+
+    /// Extract segment from segment_start_idx to a specific end index
+    fn extract_segment_to(&self, end_idx: usize) -> Vec<f32> {
+        self.ring_buffer.extract_segment_to(self.segment_start_idx, end_idx)
+    }
+
+    /// Force segment extraction when grace period expires (no word break found)
+    fn force_segment_extraction(&mut self, app_handle: &AppHandle) -> Option<Vec<f32>> {
+        if !self.is_active || !self.in_speech {
+            return None;
+        }
+
+        // Extract the current segment at the current position
+        let segment = self.ring_buffer.extract_segment(self.segment_start_idx);
+        
+        if segment.is_empty() {
+            println!("[TranscribeState] Grace period expired but segment is empty");
+            self.seeking_word_break = false;
+            return None;
+        }
+
+        println!(
+            "[TranscribeState] Grace period expired, force extracted {} samples ({} lookback + {} speech)",
+            segment.len(), self.lookback_sample_count, self.segment_sample_count
+        );
+
+        // Queue the segment for transcription (will validate before actually queueing)
+        self.queue_segment(segment.clone(), app_handle);
+
+        // Update state for next segment - remain in speech
+        self.segment_start_idx = self.ring_buffer.write_position();
+        self.segment_sample_count = 0;
+        self.lookback_sample_count = 0;
+        self.seeking_word_break = false;
+
+        Some(segment)
+    }
+
+    /// Check if a segment has sufficient audio content for transcription
+    /// Returns false if segment is too short or too quiet (likely to produce [BLANK_AUDIO])
+    fn is_segment_valid_for_transcription(&self, samples: &[f32]) -> bool {
+        if samples.is_empty() {
+            return false;
+        }
+
+        // Check minimum duration
+        let duration_ms = samples.len() as u64 * 1000 / self.sample_rate as u64;
+        if duration_ms < MIN_SEGMENT_DURATION_MS {
+            println!(
+                "[TranscribeState] Segment too short ({}ms < {}ms), skipping",
+                duration_ms, MIN_SEGMENT_DURATION_MS
+            );
+            return false;
+        }
+
+        // Check RMS amplitude to ensure segment has audio content
+        let sum_squares: f32 = samples.iter().map(|s| s * s).sum();
+        let rms = (sum_squares / samples.len() as f32).sqrt();
+        
+        if rms < MIN_AUDIO_RMS_THRESHOLD {
+            println!(
+                "[TranscribeState] Segment too quiet (RMS {:.6} < {:.6}), skipping",
+                rms, MIN_AUDIO_RMS_THRESHOLD
+            );
+            return false;
+        }
+
+        true
+    }
+
     /// Queue a segment for transcription (saves WAV and enqueues)
     fn queue_segment(&self, samples: Vec<f32>, app_handle: &AppHandle) {
         if samples.is_empty() {
+            return;
+        }
+
+        // Validate segment has sufficient content
+        if !self.is_segment_valid_for_transcription(&samples) {
             return;
         }
 

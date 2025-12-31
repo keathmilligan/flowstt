@@ -97,7 +97,7 @@ fn start_audio_processing_thread(
     app_handle: AppHandle,
 ) {
     thread::spawn(move || {
-        use crate::processor::SpeechStateChange;
+        use crate::processor::{SpeechStateChange, WordBreakEvent};
         
         loop {
             // Check if we should stop
@@ -124,21 +124,23 @@ fn start_audio_processing_thread(
                 );
                 
                 // If transcribe mode is active, also process for transcription
-                // First check for speech state changes and handle them
-                let state_change = {
+                // First check for speech state changes and word break events
+                let (state_change, word_break_event) = {
                     let recording_state = recording.get_state();
-                    let audio_state = recording_state.lock().unwrap();
-                    if let Some(ref processor) = audio_state.speech_processor {
-                        processor.peek_state_change().clone()
+                    let mut audio_state = recording_state.lock().unwrap();
+                    if let Some(ref mut processor) = audio_state.speech_processor {
+                        let state_change = processor.peek_state_change().clone();
+                        let word_break = processor.take_word_break_event();
+                        (state_change, word_break)
                     } else {
-                        SpeechStateChange::None
+                        (SpeechStateChange::None, None)
                     }
                 };
                 
                 // Handle transcribe mode
                 if let Ok(mut transcribe) = transcribe_state.try_lock() {
                     if transcribe.is_active {
-                        // Process samples into the ring buffer
+                        // Process samples into the ring buffer (includes duration tracking and grace period)
                         transcribe.process_samples(&audio_data.samples, &app_handle);
                         
                         // Handle speech state changes
@@ -150,6 +152,11 @@ fn start_audio_processing_thread(
                                 transcribe.on_speech_ended(&app_handle);
                             }
                             SpeechStateChange::None => {}
+                        }
+                        
+                        // Handle word break events for timed segment submission
+                        if let Some(WordBreakEvent { offset_ms, gap_duration_ms }) = word_break_event {
+                            transcribe.on_word_break(offset_ms, gap_duration_ms, &app_handle);
                         }
                     }
                 }
