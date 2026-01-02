@@ -140,8 +140,8 @@ img {
 
 /* Mini waveform in header */
 .mini-waveform {
-  width: 120px;
-  height: 24px;
+  width: 70px;
+  height: 40px;
   cursor: pointer;
   border-radius: 4px;
   transition: background-color 0.15s;

@@ -1123,7 +1123,8 @@ export class SpeechActivityRenderer {
   }
 }
 
-// Mini waveform renderer - simplified version for the main window header
+// Mini waveform renderer - stylized waveform for the main window header
+// Displays actual audio samples with amplitude attenuated from 100% at center to 0% at edges
 export class MiniWaveformRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -1183,6 +1184,17 @@ export class MiniWaveformRenderer {
     this.animationId = requestAnimationFrame(this.animate);
   };
 
+  // Attempt from center (0.5) to edges (0 or 1)
+  // Magnifies amplitude at center, tapers to 0 at edges
+  private attenuation(t: number): number {
+    // t is 0 at left edge, 0.5 at center, 1 at right edge
+    // Convert to distance from center: 0 at center, 1 at edges
+    const distFromCenter = Math.abs(t - 0.5) * 2;
+    // Smooth falloff using cosine curve, with boost at center
+    // Returns ~2.0 at center, 0 at edges
+    return Math.cos(distFromCenter * Math.PI / 2) * 2;
+  }
+
   private draw(): void {
     const dpr = window.devicePixelRatio || 1;
     const width = this.canvas.width / dpr;
@@ -1198,16 +1210,32 @@ export class MiniWaveformRenderer {
     }
 
     const centerY = height / 2;
-    const amplitude = (height / 2 - 2) * 1.5;
+    const maxAmplitude = height / 2 - 2; // Maximum drawable amplitude
     const pointCount = samples.length;
 
-    // Build the path
+    // First pass: find peak amplitude after attenuation to prevent clipping
+    let peakAttenuated = 0;
+    for (let i = 0; i < pointCount; i++) {
+      const t = i / (pointCount - 1);
+      const att = this.attenuation(t);
+      const sample = Math.abs(samples[i] || 0);
+      peakAttenuated = Math.max(peakAttenuated, sample * att);
+    }
+
+    // Scale factor: if peak would clip, reduce; otherwise use 1.0
+    const scale = peakAttenuated > 1 ? 1 / peakAttenuated : 1;
+
+    // Build the path with attenuated samples
     this.ctx.beginPath();
     for (let i = 0; i < pointCount; i++) {
+      const t = i / (pointCount - 1); // 0 to 1 across the width
+      const att = this.attenuation(t); // Magnified at center, 0 at edges
+      
       const sample = samples[i] || 0;
-      const x = (i / pointCount) * width;
+      const x = t * width;
       const clampedSample = Math.max(-1, Math.min(1, sample));
-      const y = centerY - clampedSample * amplitude;
+      // Apply attenuation and scale to prevent clipping
+      const y = centerY - clampedSample * maxAmplitude * att * scale;
 
       if (i === 0) {
         this.ctx.moveTo(x, y);

@@ -822,9 +822,9 @@ window.addEventListener("DOMContentLoaded", () => {
   downloadStatusEl = document.querySelector("#download-status");
   miniWaveformCanvas = document.querySelector("#mini-waveform");
 
-  // Initialize mini waveform renderer
+  // Initialize mini waveform renderer with reduced buffer for shorter time window
   if (miniWaveformCanvas) {
-    miniWaveformRenderer = new MiniWaveformRenderer(miniWaveformCanvas);
+    miniWaveformRenderer = new MiniWaveformRenderer(miniWaveformCanvas, 128);
     miniWaveformRenderer.drawIdle();
     
     // Add double-click handler to open visualization window
