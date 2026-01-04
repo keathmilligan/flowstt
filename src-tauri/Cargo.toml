@@ -48,7 +48,7 @@ aec3 = "0.1"  # Pure Rust port of WebRTC AEC3, supports 48kHz
 # Linux-specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 pipewire = "0.8"
-whisper-rs = "0.14"  # Linux uses whisper-rs (builds from source)
+whisper-rs = "0.15"  # Linux uses whisper-rs (builds from source)
 
 # Windows-specific dependencies
 [target.'cfg(target_os = "windows")'.dependencies]

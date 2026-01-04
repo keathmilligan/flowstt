@@ -25,15 +25,15 @@ const OVERFLOW_THRESHOLD_PERCENT: usize = 90;
 /// Maximum queue size for transcription segments
 const MAX_QUEUE_SIZE: usize = 10;
 
-/// Maximum segment duration before seeking word break (2 seconds)
-const MAX_SEGMENT_DURATION_MS: u64 = 2000;
+/// Maximum segment duration before seeking word break
+const MAX_SEGMENT_DURATION_MS: u64 = 4000;
 
 /// Grace period after duration threshold before forcing segment submission (500ms)
-const WORD_BREAK_GRACE_MS: u64 = 500;
+const WORD_BREAK_GRACE_MS: u64 = 750;
 
 /// Minimum segment duration to submit for transcription (200ms)
 /// Segments shorter than this are likely to produce [BLANK_AUDIO] from Whisper
-const MIN_SEGMENT_DURATION_MS: u64 = 200;
+const MIN_SEGMENT_DURATION_MS: u64 = 500;
 
 /// Minimum RMS amplitude threshold for non-silent audio (linear scale)
 /// Approximately -40dB

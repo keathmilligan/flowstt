@@ -61,7 +61,7 @@ mod platform {
             Ok(())
         }
 
-        pub fn transcribe(&mut self, audio_data: &[f32]) -> Result<String, String> {
+        pub fn transcribe(&mut self, audio_data: &[f32], _duration_ms: i32) -> Result<String, String> {
             self.load_model()?;
 
             let ctx = self.ctx.as_ref().unwrap();
@@ -81,9 +81,7 @@ mod platform {
                 .full(params, audio_data)
                 .map_err(|e| format!("Transcription failed: {}", e))?;
 
-            let num_segments = state
-                .full_n_segments()
-                .map_err(|e| format!("Failed to get segments: {}", e))?;
+            let num_segments = state.full_n_segments();
 
             if num_segments == 0 {
                 return Ok("(No speech detected)".to_string());
@@ -91,8 +89,8 @@ mod platform {
 
             let mut result = String::new();
             for i in 0..num_segments {
-                if let Ok(segment) = state.full_get_segment_text(i) {
-                    result.push_str(&segment);
+                if let Some(segment) = state.get_segment(i) {
+                    result.push_str(&segment.to_string());
                     result.push(' ');
                 }
             }
@@ -171,7 +169,7 @@ mod platform {
             Ok(())
         }
 
-        pub fn transcribe(&mut self, audio_data: &[f32]) -> Result<String, String> {
+        pub fn transcribe(&mut self, audio_data: &[f32], _duration_ms: i32) -> Result<String, String> {
             self.load_model()?;
 
             let ctx = self.ctx.as_ref().unwrap();
@@ -234,7 +232,8 @@ impl Transcriber {
     }
 
     pub fn transcribe(&mut self, audio_data: &[f32]) -> Result<String, String> {
-        self.inner.transcribe(audio_data)
+        let duration_ms = (audio_data.len() * 1000 / 16000) as i32;
+        self.inner.transcribe(audio_data, duration_ms)
     }
 }
 

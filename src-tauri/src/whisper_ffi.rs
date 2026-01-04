@@ -9,21 +9,164 @@ use std::sync::OnceLock;
 /// Opaque pointer to whisper_context
 type WhisperContext = *mut std::ffi::c_void;
 
+/// Callback types (function pointers, nullable)
+type WhisperNewSegmentCallback = *const std::ffi::c_void;
+type WhisperProgressCallback = *const std::ffi::c_void;
+type WhisperEncoderBeginCallback = *const std::ffi::c_void;
+type WhisperAbortCallback = *const std::ffi::c_void;
+type WhisperLogitsFilterCallback = *const std::ffi::c_void;
+type WhisperGrammarElement = *const std::ffi::c_void;
 
+/// VAD parameters struct
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct WhisperVadParams {
+    pub threshold: c_float,
+    pub min_speech_duration_ms: c_int,
+    pub min_silence_duration_ms: c_int,
+    pub max_speech_duration_s: c_float,
+    pub speech_pad_ms: c_int,
+    pub samples_overlap: c_float,
+}
 
-/// whisper_full_params is a large struct, but we only need to pass it by value
-/// The actual struct is ~200 bytes, we'll use the default params function
+/// whisper_full_params matching the C struct layout from whisper.h
+/// IMPORTANT: This must match the exact layout of whisper_full_params in whisper.cpp
 #[repr(C)]
 #[derive(Clone)]
 pub struct WhisperFullParams {
-    // This is a simplified representation - the actual struct is larger
-    // We'll allocate enough space and let whisper fill it in
-    _data: [u8; 512], // Oversized to be safe
+    pub strategy: c_int, // enum whisper_sampling_strategy
+
+    pub n_threads: c_int,
+    pub n_max_text_ctx: c_int,
+    pub offset_ms: c_int,
+    pub duration_ms: c_int,
+
+    pub translate: bool,
+    pub no_context: bool,
+    pub no_timestamps: bool,
+    pub single_segment: bool,
+    pub print_special: bool,
+    pub print_progress: bool,
+    pub print_realtime: bool,
+    pub print_timestamps: bool,
+
+    // Token-level timestamps
+    pub token_timestamps: bool,
+    pub thold_pt: c_float,
+    pub thold_ptsum: c_float,
+    pub max_len: c_int,
+    pub split_on_word: bool,
+    pub max_tokens: c_int,
+
+    // Speed-up techniques
+    pub debug_mode: bool,
+    pub audio_ctx: c_int,
+
+    // Tinydiarize
+    pub tdrz_enable: bool,
+
+    // Suppress regex
+    pub suppress_regex: *const c_char,
+
+    // Initial prompt
+    pub initial_prompt: *const c_char,
+    pub carry_initial_prompt: bool,
+    pub prompt_tokens: *const c_int,
+    pub prompt_n_tokens: c_int,
+
+    // Language
+    pub language: *const c_char,
+    pub detect_language: bool,
+
+    // Decoding parameters
+    pub suppress_blank: bool,
+    pub suppress_nst: bool,
+
+    pub temperature: c_float,
+    pub max_initial_ts: c_float,
+    pub length_penalty: c_float,
+
+    // Fallback parameters
+    pub temperature_inc: c_float,
+    pub entropy_thold: c_float,
+    pub logprob_thold: c_float,
+    pub no_speech_thold: c_float,
+
+    // Greedy params
+    pub greedy_best_of: c_int,
+
+    // Beam search params
+    pub beam_search_beam_size: c_int,
+    pub beam_search_patience: c_float,
+
+    // Callbacks
+    pub new_segment_callback: WhisperNewSegmentCallback,
+    pub new_segment_callback_user_data: *mut std::ffi::c_void,
+
+    pub progress_callback: WhisperProgressCallback,
+    pub progress_callback_user_data: *mut std::ffi::c_void,
+
+    pub encoder_begin_callback: WhisperEncoderBeginCallback,
+    pub encoder_begin_callback_user_data: *mut std::ffi::c_void,
+
+    pub abort_callback: WhisperAbortCallback,
+    pub abort_callback_user_data: *mut std::ffi::c_void,
+
+    pub logits_filter_callback: WhisperLogitsFilterCallback,
+    pub logits_filter_callback_user_data: *mut std::ffi::c_void,
+
+    // Grammar
+    pub grammar_rules: *const WhisperGrammarElement,
+    pub n_grammar_rules: usize,
+    pub i_start_rule: usize,
+    pub grammar_penalty: c_float,
+
+    // VAD
+    pub vad: bool,
+    pub vad_model_path: *const c_char,
+    pub vad_params: WhisperVadParams,
 }
 
-impl Default for WhisperFullParams {
-    fn default() -> Self {
-        Self { _data: [0u8; 512] }
+impl WhisperFullParams {
+    /// Configure parameters optimized for short audio segments (real-time transcription)
+    /// - n_samples: total samples in the (possibly padded) audio buffer
+    /// - duration_ms: actual speech duration in milliseconds (before padding)
+    pub fn configure_for_short_audio(&mut self, n_samples: usize, duration_ms: c_int) {
+        // Don't use past transcription as context (important for streaming)
+        self.no_context = true;
+        // Force single segment output (reduces latency)
+        self.single_segment = true;
+        // Suppress blank outputs
+        self.suppress_blank = true;
+        // Disable timestamps for speed
+        self.no_timestamps = true;
+        // Disable printing
+        self.print_special = false;
+        self.print_progress = false;
+        self.print_realtime = false;
+        self.print_timestamps = false;
+
+        // Limit processing to actual speech duration (+ small buffer for safety)
+        // This prevents whisper from hallucinating into padded silence
+        self.duration_ms = duration_ms + 100;
+
+        // Relax thresholds to accept lower-confidence results for short audio
+        // Default logprob_thold (-1.0) is too strict for short segments
+        self.logprob_thold = -2.0;
+        // Disable entropy threshold - short repetitive audio (like "one two") has low entropy
+        // Default entropy_thold (2.4) rejects valid short utterances
+        self.entropy_thold = 0.0;
+        // Disable temperature fallback - prefer fast results over retries
+        self.temperature_inc = 0.0;
+        // Limit max tokens to prevent repetition loops
+        // For short audio (~1s), we expect at most ~10 tokens
+        self.max_tokens = 16;
+
+        // Optimize audio context size for actual audio length
+        // audio_ctx is in mel spectrogram frames: n_samples / 160 (hop_length)
+        // This can provide ~30% speedup for short audio
+        let mel_frames = (n_samples / 160 + 1).min(1500) as c_int;
+        self.audio_ctx = mel_frames;
     }
 }
 
