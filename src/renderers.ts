@@ -1209,6 +1209,14 @@ export class MiniWaveformRenderer {
       return;
     }
 
+    // Get colors from CSS variables (same as full-size waveform)
+    const waveformColor = getComputedStyle(document.documentElement)
+      .getPropertyValue("--waveform-color")
+      .trim() || "#3b82f6";
+    const glowColor = getComputedStyle(document.documentElement)
+      .getPropertyValue("--waveform-glow")
+      .trim() || "rgba(59, 130, 246, 0.5)";
+
     const centerY = height / 2;
     const maxAmplitude = height / 2 - 2; // Maximum drawable amplitude
     const pointCount = samples.length;
@@ -1225,8 +1233,8 @@ export class MiniWaveformRenderer {
     // Scale factor: if peak would clip, reduce; otherwise use 1.0
     const scale = peakAttenuated > 1 ? 1 / peakAttenuated : 1;
 
-    // Build the path with attenuated samples
-    this.ctx.beginPath();
+    // Calculate points with attenuation applied
+    const points: { x: number; y: number }[] = [];
     for (let i = 0; i < pointCount; i++) {
       const t = i / (pointCount - 1); // 0 to 1 across the width
       const att = this.attenuation(t); // Magnified at center, 0 at edges
@@ -1236,17 +1244,51 @@ export class MiniWaveformRenderer {
       const clampedSample = Math.max(-1, Math.min(1, sample));
       // Apply attenuation and scale to prevent clipping
       const y = centerY - clampedSample * maxAmplitude * att * scale;
+      points.push({ x, y });
+    }
 
-      if (i === 0) {
-        this.ctx.moveTo(x, y);
+    // Build smooth path using cardinal spline interpolation
+    this.ctx.beginPath();
+    if (points.length > 0) {
+      this.ctx.moveTo(points[0].x, points[0].y);
+      
+      if (points.length === 1) {
+        // Single point - just a dot
+        this.ctx.lineTo(points[0].x, points[0].y);
+      } else if (points.length === 2) {
+        // Two points - straight line
+        this.ctx.lineTo(points[1].x, points[1].y);
       } else {
-        this.ctx.lineTo(x, y);
+        // Use Catmull-Rom spline for smooth curve through all points
+        for (let i = 0; i < points.length - 1; i++) {
+          const p0 = points[Math.max(0, i - 1)];
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const p3 = points[Math.min(points.length - 1, i + 2)];
+
+          // Catmull-Rom to Bezier conversion
+          const tension = 0.5;
+          const cp1x = p1.x + (p2.x - p0.x) * tension / 3;
+          const cp1y = p1.y + (p2.y - p0.y) * tension / 3;
+          const cp2x = p2.x - (p3.x - p1.x) * tension / 3;
+          const cp2y = p2.y - (p3.y - p1.y) * tension / 3;
+
+          this.ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+        }
       }
     }
 
-    // Draw gray waveform line
-    this.ctx.strokeStyle = "#888888";
-    this.ctx.lineWidth = 1.5;
+    // Draw glow layer (thicker, blurred) - same style as full-size waveform
+    this.ctx.save();
+    this.ctx.strokeStyle = glowColor;
+    this.ctx.lineWidth = 4;
+    this.ctx.filter = "blur(3px)";
+    this.ctx.stroke();
+    this.ctx.restore();
+
+    // Draw main waveform line (1px)
+    this.ctx.strokeStyle = waveformColor;
+    this.ctx.lineWidth = 1;
     this.ctx.stroke();
   }
 
@@ -1260,11 +1302,28 @@ export class MiniWaveformRenderer {
 
   private drawIdleLine(width: number, height: number): void {
     const centerY = height / 2;
-    this.ctx.strokeStyle = "#888888";
-    this.ctx.lineWidth = 1;
+    const waveformColor = getComputedStyle(document.documentElement)
+      .getPropertyValue("--waveform-color")
+      .trim() || "#3b82f6";
+    const glowColor = getComputedStyle(document.documentElement)
+      .getPropertyValue("--waveform-glow")
+      .trim() || "rgba(59, 130, 246, 0.5)";
+
     this.ctx.beginPath();
     this.ctx.moveTo(0, centerY);
     this.ctx.lineTo(width, centerY);
+
+    // Draw glow layer
+    this.ctx.save();
+    this.ctx.strokeStyle = glowColor;
+    this.ctx.lineWidth = 4;
+    this.ctx.filter = "blur(3px)";
+    this.ctx.stroke();
+    this.ctx.restore();
+
+    // Draw main line (1px)
+    this.ctx.strokeStyle = waveformColor;
+    this.ctx.lineWidth = 1;
     this.ctx.stroke();
   }
 

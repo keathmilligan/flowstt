@@ -44,6 +44,10 @@ Traditional voice assistants feel robotic. FlowSTT treats conversation as a cont
 - [ ] Multi-modal input (voice + CLI + gestures)
 - [ ] Workflow automation (action execution from voice commands)
 
+## Getting Started
+
+Download the latest release from the releases page.
+
 ## Prerequisites
 
 ### Whisper Model

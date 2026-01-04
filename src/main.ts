@@ -77,7 +77,7 @@ async function loadDevices() {
     // Populate both source dropdowns
     populateSourceDropdown(source1Select, true);  // Has "None" option, select first device
     populateSourceDropdown(source2Select, false); // Has "None" option, select "None"
-    
+
     // Enable controls if we have at least one device
     const hasDevices = allDevices.length > 0;
     if (transcribeToggle) {
@@ -89,10 +89,10 @@ async function loadDevices() {
     if (aecToggle) {
       aecToggle.disabled = !hasDevices;
     }
-    
+
     // Sync AEC and mode state with backend
     await syncBackendState();
-    
+
     // Update mode selector availability
     updateModeSelector();
   } catch (error) {
@@ -116,7 +116,7 @@ async function syncBackendState() {
     if (aecToggle) {
       aecToggle.checked = backendAecEnabled;
     }
-    
+
     // Sync recording mode
     const backendMode = await invoke<RecordingMode>("get_recording_mode");
     recordingMode = backendMode;
@@ -130,15 +130,15 @@ async function syncBackendState() {
 
 function populateSourceDropdown(select: HTMLSelectElement | null, selectFirstDevice: boolean) {
   if (!select) return;
-  
+
   select.innerHTML = "";
-  
+
   // Add "None" option
   const noneOption = document.createElement("option");
   noneOption.value = "";
   noneOption.textContent = "None";
   select.appendChild(noneOption);
-  
+
   // Add all devices
   allDevices.forEach((device) => {
     const option = document.createElement("option");
@@ -146,7 +146,7 @@ function populateSourceDropdown(select: HTMLSelectElement | null, selectFirstDev
     option.textContent = device.name;
     select.appendChild(option);
   });
-  
+
   // Select first device for source1, "None" for source2
   if (selectFirstDevice && allDevices.length > 0) {
     select.value = allDevices[0].id;
@@ -173,7 +173,7 @@ function hasAnySourceSelected(): boolean {
 async function onSourceChange() {
   // Always update mode selector when sources change
   updateModeSelector();
-  
+
   if (!isMonitoring && !isTranscribing) {
     // Not active, nothing to do
     return;
@@ -271,7 +271,7 @@ async function downloadModel() {
     await invoke("download_model");
     downloadStatusEl.textContent = "Download complete!";
     downloadStatusEl.className = "download-status success";
-    
+
     // Hide warning after successful download
     setTimeout(() => {
       checkModelStatus();
@@ -318,26 +318,26 @@ let transcriptionBuffer = "";
 // Update display with text and cursor
 function updateTranscriptionDisplay(): void {
   if (!resultEl) return;
-  
+
   // Clear and rebuild content with cursor
   resultEl.innerHTML = "";
-  
+
   // Create wrapper for text content (allows flex bottom-align while keeping inline flow)
   const textWrapper = document.createElement("span");
   textWrapper.className = "result-text";
-  
+
   // Add text
   if (transcriptionBuffer.length > 0) {
     textWrapper.appendChild(document.createTextNode(transcriptionBuffer));
   }
-  
+
   // Add blinking block cursor inline with text
   const cursor = document.createElement("span");
   cursor.className = "result-cursor";
   textWrapper.appendChild(cursor);
-  
+
   resultEl.appendChild(textWrapper);
-  
+
   // Auto-scroll to bottom (ensure newest text is visible)
   resultEl.scrollTop = resultEl.scrollHeight;
 }
@@ -345,18 +345,18 @@ function updateTranscriptionDisplay(): void {
 // Append transcription text and manage buffer
 function appendTranscription(newText: string): void {
   if (!resultEl) return;
-  
+
   // Trim the new text and skip if empty
   const trimmedText = newText.trim();
   if (!trimmedText) return;
-  
+
   // Append with space separator (no line breaks)
   if (transcriptionBuffer.length > 0) {
     transcriptionBuffer += " " + trimmedText;
   } else {
     transcriptionBuffer = trimmedText;
   }
-  
+
   // Truncate to keep buffer from growing indefinitely
   // Keep enough text to fill the panel with overflow for clipping effect
   // ~80 chars per line, ~20 lines = ~1600 chars max
@@ -371,7 +371,7 @@ function appendTranscription(newText: string): void {
       transcriptionBuffer = transcriptionBuffer.substring(startIndex);
     }
   }
-  
+
   updateTranscriptionDisplay();
 }
 
@@ -497,7 +497,7 @@ async function checkCudaStatus() {
   try {
     const status = await invoke<CudaStatus>("get_cuda_status");
     cudaBuildEnabled = status.build_enabled;
-    
+
     if (cudaIndicator) {
       if (status.build_enabled) {
         cudaIndicator.classList.remove("hidden");
@@ -512,7 +512,7 @@ async function checkCudaStatus() {
         cudaIndicator.classList.add("hidden");
       }
     }
-    
+
     console.log(`CUDA status: build_enabled=${status.build_enabled}, runtime_available=${status.runtime_available}`);
     console.log(`Whisper system info: ${status.system_info}`);
   } catch (error) {
@@ -528,7 +528,7 @@ async function setupTranscriptionActiveListeners() {
       transcribingIndicator.classList.add("active");
     }
   });
-  
+
   transcriptionFinishedUnlisten = await listen("transcription-finished", () => {
     console.log(`[Transcription] Finished (CUDA: ${cudaBuildEnabled})`);
     if (transcribingIndicator) {
@@ -571,7 +571,7 @@ async function onModeChange() {
     await invoke("set_recording_mode", { mode: newMode });
     recordingMode = newMode;
     console.log(`Recording mode set to: ${recordingMode}`);
-    
+
     // Update status if currently monitoring/transcribing
     if (isMonitoring || isTranscribing) {
       updateStatusForCurrentState();
@@ -589,10 +589,10 @@ function updateModeSelector() {
 
   const { source1Id, source2Id } = getSelectedSources();
   const hasTwoSources = source1Id !== null && source2Id !== null;
-  
+
   // Enable/disable the mode selector based on source count
   modeSelect.disabled = !hasTwoSources;
-  
+
   // If only one source is selected and mode was EchoCancel, switch to Mixed
   if (!hasTwoSources && recordingMode === "EchoCancel") {
     modeSelect.value = "Mixed";
@@ -607,7 +607,7 @@ function updateModeSelector() {
 function updateStatusForCurrentState() {
   const { source1Id, source2Id } = getSelectedSources();
   const hasTwoSources = source1Id !== null && source2Id !== null;
-  
+
   let statusText: string;
   if (isTranscribing) {
     if (inSpeechSegment) {
@@ -619,8 +619,8 @@ function updateStatusForCurrentState() {
     }
   } else if (isMonitoring) {
     if (hasTwoSources) {
-      statusText = recordingMode === "EchoCancel" 
-        ? "Monitoring (Voice Only)..." 
+      statusText = recordingMode === "EchoCancel"
+        ? "Monitoring (Voice Only)..."
         : "Monitoring (Mixed)...";
     } else {
       statusText = "Monitoring...";
@@ -641,7 +641,7 @@ async function toggleMonitor() {
       isMonitoring = false;
       monitorToggle.checked = false;
       setStatus("");
-      
+
       miniWaveformRenderer?.stop();
       miniWaveformRenderer?.clear();
       await cleanupVisualizationListener();
@@ -662,15 +662,15 @@ async function toggleMonitor() {
 
     try {
       await setupVisualizationListener();
-      await invoke("start_monitor", { 
+      await invoke("start_monitor", {
         source1Id,
         source2Id,
       });
       isMonitoring = true;
       monitorToggle.checked = true;
-      
+
       updateStatusForCurrentState();
-      
+
       miniWaveformRenderer?.clear();
       miniWaveformRenderer?.start();
     } catch (error) {
@@ -689,13 +689,13 @@ async function toggleTranscribe() {
     // Stop transcribe mode
     try {
       await invoke("stop_transcribe_mode");
-      
+
       isTranscribing = false;
       isMonitoring = false;
       inSpeechSegment = false;
       transcribeQueueDepth = 0;
       transcribeToggle.checked = false;
-      
+
       // Re-enable monitor toggle
       if (monitorToggle) {
         monitorToggle.disabled = false;
@@ -736,17 +736,17 @@ async function toggleTranscribe() {
       await setupVisualizationListener();
       await setupTranscriptionListeners();
       await setupTranscribeQueueListener();
-      
-      await invoke("start_transcribe_mode", { 
+
+      await invoke("start_transcribe_mode", {
         source1Id,
         source2Id,
       });
       isTranscribing = true;
       isMonitoring = true;
       transcribeToggle.checked = true;
-      
+
       updateStatusForCurrentState();
-      
+
       // Disable monitor toggle during transcribe mode (monitoring is implicit)
       if (monitorToggle) {
         monitorToggle.disabled = true;
@@ -824,9 +824,9 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // Initialize mini waveform renderer with reduced buffer for shorter time window
   if (miniWaveformCanvas) {
-    miniWaveformRenderer = new MiniWaveformRenderer(miniWaveformCanvas, 128);
+    miniWaveformRenderer = new MiniWaveformRenderer(miniWaveformCanvas, 64);
     miniWaveformRenderer.drawIdle();
-    
+
     // Add double-click handler to open visualization window
     miniWaveformCanvas.addEventListener("dblclick", (e) => {
       e.preventDefault();
@@ -876,7 +876,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // Initialize CUDA and transcription indicators
   cudaIndicator = document.querySelector("#cuda-indicator");
   transcribingIndicator = document.querySelector("#transcribing-indicator");
-  
+
   loadDevices();
   checkModelStatus();
   checkCudaStatus();
