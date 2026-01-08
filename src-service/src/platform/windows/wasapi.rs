@@ -508,7 +508,7 @@ impl AudioMixer {
             // Debug logging (periodic)
             static LOG_COUNTER: AtomicU32 = AtomicU32::new(0);
             let count = LOG_COUNTER.fetch_add(1, Ordering::Relaxed);
-            if count % 500 == 0 {
+            if count.is_multiple_of(500) {
                 let render_rms: f32 = if !render_frame.is_empty() {
                     (render_frame.iter().map(|s| s * s).sum::<f32>() / render_frame.len() as f32)
                         .sqrt()
