@@ -82,7 +82,7 @@ extern "C" fn input_callback_proc(
         (*buffer_list).mNumberBuffers = num_buffers as u32;
 
         let buffers_ptr = (*buffer_list).mBuffers.as_mut_ptr();
-        for i in 0..num_buffers {
+        for (i, data) in buffer_data.iter_mut().enumerate().take(num_buffers) {
             let buffer = &mut *buffers_ptr.add(i);
             buffer.mNumberChannels = if context.is_non_interleaved {
                 1
@@ -90,7 +90,7 @@ extern "C" fn input_callback_proc(
                 context.num_channels as u32
             };
             buffer.mDataByteSize = bytes_per_buffer as u32;
-            buffer.mData = buffer_data[i].as_mut_ptr() as *mut c_void;
+            buffer.mData = data.as_mut_ptr() as *mut c_void;
         }
     }
 
