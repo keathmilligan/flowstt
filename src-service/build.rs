@@ -33,6 +33,14 @@ fn main() {
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
 
+    // Use a stable cache directory in target/ rather than OUT_DIR (which changes per build)
+    // This ensures downloads are cached across rebuilds
+    let stable_cache_dir = out_dir
+        .ancestors()
+        .find(|p| p.file_name().map(|n| n == "target").unwrap_or(false))
+        .map(|p| p.join("whisper-cache"))
+        .unwrap_or_else(|| out_dir.join("whisper-cache"));
+
     // Determine which binary to download and which libraries to extract
     // When CUDA feature is enabled on Windows x64, use CUDA-enabled binaries
     let (zip_name, lib_names): (&str, Vec<&str>) = match (target_os.as_str(), target_arch.as_str())
@@ -92,24 +100,28 @@ fn main() {
     };
     let primary_lib = lib_names[0];
 
-    // Cache directory for downloaded files
-    let cache_dir = out_dir.join("whisper-cache");
-    fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
+    // Use stable cache directory for downloads (persists across rebuilds)
+    fs::create_dir_all(&stable_cache_dir).expect("Failed to create cache directory");
 
     // Include cuda in cache path to separate CUDA and non-CUDA builds
     let cuda_suffix = if cuda_enabled { "-cuda" } else { "" };
-    let zip_path = cache_dir.join(format!(
+    let zip_path = stable_cache_dir.join(format!(
         "whisper-{}-{}{}.zip",
         WHISPER_VERSION, target_arch, cuda_suffix
     ));
-    // Separate output directories for CUDA and non-CUDA to avoid mixing libraries
-    let lib_output_dir = out_dir.join(format!("whisper-lib{}", cuda_suffix));
+    // Extracted libraries also go in stable cache (versioned to handle updates)
+    let lib_output_dir = stable_cache_dir.join(format!(
+        "whisper-{}-{}{}-lib",
+        WHISPER_VERSION, target_arch, cuda_suffix
+    ));
     fs::create_dir_all(&lib_output_dir).expect("Failed to create lib output directory");
 
     let primary_lib_path = lib_output_dir.join(primary_lib);
 
     // Check if we already have the primary library
-    if !primary_lib_path.exists() {
+    if primary_lib_path.exists() {
+        // Library already cached - skip download
+    } else {
         // Download if not cached
         if !zip_path.exists() {
             let url = format!("{}/v{}/{}", GITHUB_RELEASE_BASE, WHISPER_VERSION, zip_name);
@@ -153,7 +165,7 @@ fn main() {
 /// Build whisper.cpp from source on Linux using CMake
 fn build_whisper_linux(cuda_enabled: bool) {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
-    let _target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
 
     // Check for CMake
     if !check_cmake_available() {
@@ -178,16 +190,24 @@ fn build_whisper_linux(cuda_enabled: bool) {
         );
     }
 
-    // Create cache directory for source
-    let cache_dir = out_dir.join("whisper-cache");
-    fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
+    // Use stable cache directory in target/ (persists across rebuilds)
+    let stable_cache_dir = out_dir
+        .ancestors()
+        .find(|p| p.file_name().map(|n| n == "target").unwrap_or(false))
+        .map(|p| p.join("whisper-cache"))
+        .unwrap_or_else(|| out_dir.join("whisper-cache"));
+    fs::create_dir_all(&stable_cache_dir).expect("Failed to create cache directory");
 
     // Include cuda in paths to separate CUDA and non-CUDA builds
     let cuda_suffix = if cuda_enabled { "-cuda" } else { "" };
-    let source_tarball = cache_dir.join(format!("whisper-{}.tar.gz", WHISPER_VERSION));
-    let source_dir = cache_dir.join(format!("whisper.cpp-{}", WHISPER_VERSION));
-    let build_dir = out_dir.join(format!("whisper-build{}", cuda_suffix));
-    let lib_output_dir = out_dir.join(format!("whisper-lib{}", cuda_suffix));
+    let source_tarball = stable_cache_dir.join(format!("whisper-{}.tar.gz", WHISPER_VERSION));
+    let source_dir = stable_cache_dir.join(format!("whisper.cpp-{}", WHISPER_VERSION));
+    let build_dir =
+        stable_cache_dir.join(format!("whisper-{}-build{}", WHISPER_VERSION, cuda_suffix));
+    let lib_output_dir = stable_cache_dir.join(format!(
+        "whisper-{}-{}{}-lib",
+        WHISPER_VERSION, target_arch, cuda_suffix
+    ));
 
     fs::create_dir_all(&lib_output_dir).expect("Failed to create lib output directory");
 
@@ -211,7 +231,7 @@ fn build_whisper_linux(cuda_enabled: bool) {
 
             // Extract tarball
             println!("cargo:warning=Extracting whisper.cpp source...");
-            extract_tarball(&source_tarball, &cache_dir)
+            extract_tarball(&source_tarball, &stable_cache_dir)
                 .expect("Failed to extract whisper.cpp source");
         }
 

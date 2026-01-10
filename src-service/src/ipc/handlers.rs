@@ -81,6 +81,7 @@ pub async fn handle_request(request: Request) -> Response {
             source2_id,
             aec_enabled,
             mode,
+            transcription_enabled,
         } => {
             let state_arc = get_service_state();
             let mut state = state_arc.lock().await;
@@ -100,22 +101,27 @@ pub async fn handle_request(request: Request) -> Response {
                 .map(|b| b.sample_rate())
                 .unwrap_or(48000);
 
-            // Initialize transcribe state
+            // Initialize transcribe state (only activate if transcription is enabled)
             {
                 let transcribe_state = get_transcribe_state();
                 let mut transcribe = transcribe_state.lock().unwrap();
                 transcribe.init_for_capture(sample_rate, 2);
-                transcribe.activate();
+                if transcription_enabled {
+                    transcribe.activate();
+                }
             }
 
-            // Set up transcription queue callback
-            let queue = get_transcription_queue();
-            queue.set_callback(Arc::new(TranscriptionEventBroadcaster));
+            // Only start transcription worker if transcription is enabled
+            if transcription_enabled {
+                // Set up transcription queue callback
+                let queue = get_transcription_queue();
+                queue.set_callback(Arc::new(TranscriptionEventBroadcaster));
 
-            // Start transcription worker
-            let transcriber = Transcriber::new();
-            let model_path = transcriber.get_model_path().clone();
-            queue.start_worker(model_path);
+                // Start transcription worker
+                let transcriber = Transcriber::new();
+                let model_path = transcriber.get_model_path().clone();
+                queue.start_worker(model_path);
+            }
 
             // Start capture
             if let Some(backend) = platform::get_backend() {
@@ -129,7 +135,7 @@ pub async fn handle_request(request: Request) -> Response {
                 return Response::error("Audio backend not available");
             }
 
-            // Start audio processing loop
+            // Start audio processing loop (needed for visualization even without transcription)
             if !is_audio_loop_active() {
                 let queue = get_transcription_queue();
                 let transcribe_state = get_transcribe_state();
@@ -139,7 +145,14 @@ pub async fn handle_request(request: Request) -> Response {
             }
 
             state.transcribe_status.active = true;
-            info!("Transcription started");
+            info!(
+                "{}",
+                if transcription_enabled {
+                    "Transcription started"
+                } else {
+                    "Monitoring started (transcription disabled)"
+                }
+            );
 
             // Broadcast event
             broadcast_event(Response::Event {

@@ -205,6 +205,7 @@ async fn run(cli: Cli) -> Result<(), String> {
                     source2_id: source2,
                     aec_enabled: aec,
                     mode: recording_mode,
+                    transcription_enabled: true,
                 })
                 .await
                 .map_err(|e| e.to_string())?;

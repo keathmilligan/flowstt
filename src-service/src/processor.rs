@@ -246,7 +246,7 @@ impl SpeechDetector {
             voiced_grace_count: 0,
             whisper_grace_count: 0,
             initialized: false,
-            last_amplitude_db: f32::NEG_INFINITY,
+            last_amplitude_db: -100.0, // Use finite value instead of NEG_INFINITY (JSON serialization issue)
             last_zcr: 0.0,
             last_centroid_hz: 0.0,
             last_is_transient: false,
@@ -293,7 +293,7 @@ impl SpeechDetector {
     /// Convert linear amplitude to decibels
     fn amplitude_to_db(amplitude: f32) -> f32 {
         if amplitude <= 0.0 {
-            return f32::NEG_INFINITY;
+            return -100.0; // Use finite value instead of NEG_INFINITY (JSON serialization issue)
         }
         20.0 * amplitude.log10()
     }

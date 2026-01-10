@@ -4,6 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{AudioSourceType, RecordingMode};
 
+/// Default value for transcription_enabled (true for backwards compatibility)
+fn default_transcription_enabled() -> bool {
+    true
+}
+
 /// IPC request from client to service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -31,6 +36,9 @@ pub enum Request {
         /// Recording mode (mixed or echo-cancel)
         #[serde(default)]
         mode: RecordingMode,
+        /// Enable transcription (when false, only monitoring/visualization is active)
+        #[serde(default = "default_transcription_enabled")]
+        transcription_enabled: bool,
     },
     /// Stop transcription mode
     StopTranscribe,

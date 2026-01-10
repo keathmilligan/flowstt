@@ -78,7 +78,7 @@ async fn start_monitor(
         return Err("At least one audio source must be selected".to_string());
     }
 
-    // Start transcription in the service (this also enables monitoring/visualization)
+    // Start monitoring only (transcription disabled - just visualization)
     let response = send_request(
         &state.ipc,
         Request::StartTranscribe {
@@ -86,6 +86,7 @@ async fn start_monitor(
             source2_id,
             aec_enabled: false,
             mode: RecordingMode::Mixed,
+            transcription_enabled: false,
         },
     )
     .await?;
@@ -287,6 +288,7 @@ async fn start_transcribe_mode(
             source2_id,
             aec_enabled: false,
             mode: RecordingMode::Mixed,
+            transcription_enabled: true,
         },
     )
     .await?;
