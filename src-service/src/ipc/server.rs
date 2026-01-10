@@ -195,32 +195,56 @@ where
             break;
         }
 
-        // Check for incoming events if subscribed
+        // If subscribed to events, use select! to handle both events and requests efficiently
         if subscribed {
             if let Some(ref mut rx) = event_receiver {
-                // Try to receive an event (non-blocking)
-                match rx.try_recv() {
-                    Ok(event) => {
-                        let mut w = writer.lock().await;
-                        write_json(&mut *w, &event).await?;
+                let mut r = reader.lock().await;
+
+                tokio::select! {
+                    // Wait for event from broadcast channel
+                    event_result = rx.recv() => {
+                        drop(r); // Release reader lock before writing
+                        match event_result {
+                            Ok(event) => {
+                                let mut w = writer.lock().await;
+                                write_json(&mut *w, &event).await?;
+                            }
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Client lagged {} events", n);
+                            }
+                            Err(broadcast::error::RecvError::Closed) => {
+                                // Channel closed, unsubscribe
+                                subscribed = false;
+                                event_receiver = None;
+                            }
+                        }
                         continue;
                     }
-                    Err(broadcast::error::TryRecvError::Empty) => {
-                        // No event, continue to check for requests
-                    }
-                    Err(broadcast::error::TryRecvError::Lagged(n)) => {
-                        warn!("Client lagged {} events", n);
-                    }
-                    Err(broadcast::error::TryRecvError::Closed) => {
-                        // Channel closed, unsubscribe
-                        subscribed = false;
-                        event_receiver = None;
+                    // Wait for request from client (with longer timeout since events are prioritized)
+                    read_result = tokio::time::timeout(std::time::Duration::from_secs(1), read_json(&mut *r)) => {
+                        drop(r); // Release reader lock
+                        match read_result {
+                            Ok(Ok(request)) => {
+                                info!("Received request: {:?}", request);
+                                let response = handle_request(request).await;
+                                info!("Sending response: {:?}", response);
+                                let mut w = writer.lock().await;
+                                write_json(&mut *w, &response).await?;
+                            }
+                            Ok(Err(e)) => {
+                                return Err(e);
+                            }
+                            Err(_) => {
+                                // Timeout, continue loop to check for events/shutdown
+                            }
+                        }
+                        continue;
                     }
                 }
             }
         }
 
-        // Read request with timeout
+        // Not subscribed - just handle requests with timeout
         let read_result = {
             let mut r = reader.lock().await;
             tokio::time::timeout(std::time::Duration::from_millis(100), read_json(&mut *r)).await

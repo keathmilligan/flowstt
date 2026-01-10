@@ -21,6 +21,7 @@ let speechActivityRenderer: SpeechActivityRenderer | null = null;
 
 // Event listeners
 let visualizationUnlisten: UnlistenFn | null = null;
+let closeRequestedUnlisten: UnlistenFn | null = null;
 
 async function setupVisualizationListener() {
   if (visualizationUnlisten) return;
@@ -112,17 +113,30 @@ window.addEventListener("DOMContentLoaded", async () => {
   await setupVisualizationListener();
   startRenderers();
 
-  // Close button handler
+  // Intercept close requests and hide instead of destroying the window
+  // This allows the window to be reopened later
+  const appWindow = getCurrentWindow();
+  closeRequestedUnlisten = await appWindow.onCloseRequested(async (event) => {
+    // Prevent the window from being destroyed
+    event.preventDefault();
+    // Hide it instead
+    await appWindow.hide();
+  });
+
+  // Close button handler - hide instead of close to allow reopening
   closeBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const window = getCurrentWindow();
-    await window.close();
+    await appWindow.hide();
   });
 
-  // Cleanup on window close
+  // Cleanup on window close (only runs if window is actually destroyed)
   window.addEventListener("beforeunload", () => {
     stopRenderers();
     cleanupVisualizationListener();
+    if (closeRequestedUnlisten) {
+      closeRequestedUnlisten();
+      closeRequestedUnlisten = null;
+    }
   });
 });

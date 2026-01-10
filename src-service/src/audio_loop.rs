@@ -187,7 +187,9 @@ impl VisualizationCallback for VisualizationBroadcaster {
         // Convert processor payload to common VisualizationData
         let data = VisualizationData {
             waveform: payload.waveform,
-            spectrogram: payload.spectrogram.map(|s| s.colors),
+            spectrogram: payload
+                .spectrogram
+                .map(|s| flowstt_common::SpectrogramColumn { colors: s.colors }),
             speech_metrics: payload
                 .speech_metrics
                 .map(|m| flowstt_common::SpeechMetrics {

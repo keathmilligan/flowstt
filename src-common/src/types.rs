@@ -69,6 +69,13 @@ pub struct CudaStatus {
     pub system_info: String,
 }
 
+/// A single column of spectrogram data ready for rendering.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpectrogramColumn {
+    /// RGB triplets for each pixel row (height * 3 bytes)
+    pub colors: Vec<u8>,
+}
+
 /// Visualization data for real-time audio display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisualizationData {
@@ -76,7 +83,7 @@ pub struct VisualizationData {
     pub waveform: Vec<f32>,
     /// Spectrogram column (RGB color values, if ready)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub spectrogram: Option<Vec<u8>>,
+    pub spectrogram: Option<SpectrogramColumn>,
     /// Speech detection metrics
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speech_metrics: Option<SpeechMetrics>,
