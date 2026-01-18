@@ -11,7 +11,7 @@ use std::thread;
 use std::time::Duration;
 
 use flowstt_common::ipc::{EventType, Response};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info};
 
 use crate::hotkey::{self, HotkeyEvent};
 use crate::ipc::broadcast_event;
@@ -78,7 +78,7 @@ pub fn stop_ptt_controller() {
 
 /// Main PTT controller loop
 fn ptt_controller_loop() {
-    info!("[PTT Controller] Loop started");
+    info!("[PTT] Controller polling for hotkey events...");
 
     while get_ptt_thread_running().load(Ordering::SeqCst) {
         // Check if we should stop
@@ -90,11 +90,9 @@ fn ptt_controller_loop() {
         if let Some(event) = hotkey::try_recv_hotkey() {
             match event {
                 HotkeyEvent::Pressed => {
-                    info!("[PTT Controller] Hotkey PRESSED - starting capture");
                     handle_ptt_pressed();
                 }
                 HotkeyEvent::Released => {
-                    info!("[PTT Controller] Hotkey RELEASED - stopping capture");
                     handle_ptt_released();
                 }
             }
@@ -104,17 +102,17 @@ fn ptt_controller_loop() {
         thread::sleep(Duration::from_millis(5));
     }
 
-    info!("[PTT Controller] Loop stopped");
+    info!("[PTT] Controller stopped");
     get_ptt_thread_running().store(false, Ordering::SeqCst);
 }
 
 /// Handle PTT key press - start audio capture
 fn handle_ptt_pressed() {
     if get_ptt_active().load(Ordering::SeqCst) {
-        debug!("[PTT Controller] Already active, ignoring press");
         return;
     }
 
+    info!("[PTT] Recording STARTED");
     get_ptt_active().store(true, Ordering::SeqCst);
 
     // Update state
@@ -131,7 +129,7 @@ fn handle_ptt_pressed() {
 
     // Start capture
     if let Err(e) = start_ptt_capture() {
-        warn!("[PTT Controller] Failed to start capture: {}", e);
+        error!("[PTT] Failed to start recording: {}", e);
         get_ptt_active().store(false, Ordering::SeqCst);
 
         broadcast_event(Response::Event {
@@ -158,10 +156,10 @@ fn handle_ptt_pressed() {
 /// Handle PTT key release - stop audio capture and submit segment
 fn handle_ptt_released() {
     if !get_ptt_active().load(Ordering::SeqCst) {
-        debug!("[PTT Controller] Not active, ignoring release");
         return;
     }
 
+    info!("[PTT] Recording STOPPED - submitting for transcription");
     get_ptt_active().store(false, Ordering::SeqCst);
 
     // Update state
@@ -171,12 +169,23 @@ fn handle_ptt_released() {
         state.is_ptt_active = false;
     }
 
-    // Finalize current segment before stopping
+    // Finalize current segment before stopping - this submits for transcription
     let transcribe_state = get_transcribe_state();
     if let Ok(mut transcribe) = transcribe_state.try_lock() {
+        info!(
+            "[PTT] Finalizing segment: in_speech={}, is_active={}",
+            transcribe.in_speech, transcribe.is_active
+        );
         if transcribe.in_speech {
-            transcribe.on_speech_ended();
+            let segment = transcribe.on_speech_ended();
+            if let Some(ref s) = segment {
+                info!("[PTT] Extracted {} samples for transcription", s.len());
+            } else {
+                info!("[PTT] No segment extracted (empty or invalid)");
+            }
         }
+    } else {
+        error!("[PTT] Failed to lock transcribe state for finalization");
     }
 
     // Stop capture
@@ -226,11 +235,12 @@ fn start_ptt_capture() -> Result<(), String> {
         .map(|b| b.sample_rate())
         .unwrap_or(48000);
 
-    // Initialize transcribe state
+    // Initialize transcribe state for PTT mode
     {
         let transcribe_state = get_transcribe_state();
         let mut transcribe = transcribe_state.lock().unwrap();
         transcribe.init_for_capture(sample_rate, 2);
+        transcribe.set_ptt_mode(true); // Disable automatic segmentation
         transcribe.activate();
         // Immediately start speech segment (no lookback in PTT mode)
         transcribe.on_speech_started(0);
@@ -258,7 +268,7 @@ fn start_ptt_capture() -> Result<(), String> {
         state.transcribe_status.error = None;
     }
 
-    info!("[PTT Controller] Capture started");
+    debug!("[PTT] Audio capture started");
     Ok(())
 }
 
@@ -267,11 +277,12 @@ fn stop_ptt_capture() {
     // Stop PTT audio processing loop
     stop_ptt_audio_loop();
 
-    // Finalize transcribe state
+    // Finalize transcribe state and disable PTT mode
     let transcribe_state = get_transcribe_state();
     if let Ok(mut transcribe) = transcribe_state.try_lock() {
         transcribe.finalize();
         transcribe.deactivate();
+        transcribe.set_ptt_mode(false); // Restore automatic segmentation for next use
     }
 
     // Stop capture

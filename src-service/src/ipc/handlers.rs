@@ -398,11 +398,15 @@ pub async fn handle_request(request: Request) -> Response {
         Request::SetTranscriptionMode { mode } => {
             let state_arc = get_service_state();
 
-            let (old_mode, is_ready) = {
+            let (old_mode, is_ready, ptt_key) = {
                 let mut state = state_arc.lock().await;
                 let old_mode = state.transcription_mode;
                 state.transcription_mode = mode;
-                (old_mode, state.app_ready && state.has_primary_source())
+                (
+                    old_mode,
+                    state.app_ready && state.has_primary_source(),
+                    state.ptt_key,
+                )
             };
 
             // If mode changed and system is ready, restart capture with new mode
@@ -414,6 +418,15 @@ pub async fn handle_request(request: Request) -> Response {
                 if let Err(e) = start_capture().await {
                     tracing::warn!("Failed to restart capture after mode change: {}", e);
                 }
+            }
+
+            // Save configuration to disk
+            let config = crate::config::Config {
+                transcription_mode: mode,
+                ptt_key,
+            };
+            if let Err(e) = config.save() {
+                tracing::warn!("Failed to save config: {}", e);
             }
 
             info!("Transcription mode set to {:?}", mode);
@@ -428,22 +441,34 @@ pub async fn handle_request(request: Request) -> Response {
 
         Request::SetPushToTalkKey { key } => {
             let state_arc = get_service_state();
-            let mut state = state_arc.lock().await;
-
-            let old_key = state.ptt_key;
-            state.ptt_key = key;
+            let (old_key, transcription_mode, is_capturing_ptt) = {
+                let mut state = state_arc.lock().await;
+                let old_key = state.ptt_key;
+                state.ptt_key = key;
+                let is_capturing_ptt = state.transcribe_status.capturing
+                    && state.transcription_mode == TranscriptionMode::PushToTalk;
+                (old_key, state.transcription_mode, is_capturing_ptt)
+            };
 
             // If capturing in PTT mode, restart hotkey with new key
-            if state.transcribe_status.capturing
-                && state.transcription_mode == TranscriptionMode::PushToTalk
-            {
+            if is_capturing_ptt {
                 hotkey::stop_hotkey();
                 if let Err(e) = hotkey::start_hotkey(key) {
                     // Revert on failure
+                    let mut state = state_arc.lock().await;
                     state.ptt_key = old_key;
                     let _ = hotkey::start_hotkey(old_key);
                     return Response::error(format!("Failed to set hotkey: {}", e));
                 }
+            }
+
+            // Save configuration to disk
+            let config = crate::config::Config {
+                transcription_mode,
+                ptt_key: key,
+            };
+            if let Err(e) = config.save() {
+                tracing::warn!("Failed to save config: {}", e);
             }
 
             info!("PTT key set to {:?}", key);

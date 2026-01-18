@@ -17,12 +17,12 @@ FlowSTT currently operates in a single automatic transcription mode where Voice 
 **Goals**:
 - Enable manual push-to-talk control as an alternative to VAD-triggered transcription
 - Provide a working macOS implementation using CGEventTap
+- Provide a working Windows implementation using Raw Input API
 - Define clear interfaces for cross-platform hotkey abstraction
 - Allow configurable hotkey binding (with sensible defaults)
 - Provide visual feedback of PTT state in GUI
 
 **Non-Goals**:
-- Full Windows implementation (stub only for now)
 - Full Linux implementation (stub only for now)
 - Modifier key combinations (e.g., Cmd+Space) - single key only initially
 - Multiple simultaneous hotkeys
@@ -67,15 +67,37 @@ pub enum HotkeyEvent {
 
 **Permissions**: Requires Accessibility permission (kTCCServiceAccessibility). The application should detect missing permissions and guide the user to enable them.
 
-### Decision 4: Default Hotkey: Right Option Key
+### Decision 3b: Windows Raw Input Implementation
 
-**What**: Use the Right Option (Alt) key as the default PTT hotkey on macOS.
+**What**: Use Windows Raw Input API with a hidden message-only window to detect global key events, including when the application is not focused.
+
+**Why**: 
+- Raw Input (`RegisterRawInputDevices` with `RIDEV_INPUTSINK`) receives keyboard input even when the window is not in the foreground
+- Unlike `RegisterHotKey`, Raw Input provides key press and release events, which is essential for push-to-talk functionality
+- No special permissions required on Windows - works out of the box
+- The `windows` crate already provides the necessary Win32 bindings
+
+**Implementation approach**:
+- Create a hidden message-only window (`HWND_MESSAGE`) on a dedicated thread
+- Register for raw keyboard input with `RIDEV_INPUTSINK` flag
+- Process `WM_INPUT` messages to detect key press/release
+- Use virtual key codes to match the configured PTT hotkey
+- Send events to the main thread via channel
+
+**Alternatives considered**:
+- **RegisterHotKey API**: Only provides key press events, not release; rejected for PTT use case
+- **Low-level keyboard hook (SetWindowsHookEx)**: More intrusive, can slow down system; rejected
+- **GetAsyncKeyState polling**: Inefficient CPU usage; rejected
+
+### Decision 4: Default Hotkey: Right Alt Key
+
+**What**: Use the Right Alt key as the default PTT hotkey (Right Option on macOS).
 
 **Why**: 
 - Single key avoids complexity of modifier combinations
-- Right Option is rarely used in normal typing
+- Right Alt is rarely used in normal typing on both Windows and macOS
 - Ergonomically accessible for right-hand operation
-- Doesn't conflict with common shortcuts
+- Doesn't conflict with common shortcuts on either platform
 
 **Configuration**: Users can change to other keys via settings.
 
@@ -117,12 +139,12 @@ pub enum TranscriptionMode {
 
 ### Risk: Platform Implementation Disparity
 
-**Risk**: Windows and Linux users will have stubs, creating inconsistent experience.
+**Risk**: Linux users will have a stub, creating inconsistent experience.
 
 **Mitigation**:
-- Clear documentation that PTT is macOS-only initially
-- UI disables PTT mode selection on unsupported platforms
-- Stub implementations compile cleanly and return appropriate errors
+- Clear documentation that PTT is macOS and Windows only initially
+- UI disables PTT mode selection on unsupported platforms (Linux)
+- Stub implementation for Linux compiles cleanly and returns appropriate error
 
 ### Trade-off: Single Key vs Modifier Combinations
 
@@ -142,8 +164,8 @@ No migration needed—this is a new feature. Default behavior remains Automatic 
 
 **Rollout**:
 1. Ship with Automatic mode as default
-2. PTT mode available via settings on macOS
-3. PTT mode greyed out/unavailable on Windows/Linux until implemented
+2. PTT mode available via settings on macOS and Windows
+3. PTT mode greyed out/unavailable on Linux until implemented
 
 ## Open Questions
 

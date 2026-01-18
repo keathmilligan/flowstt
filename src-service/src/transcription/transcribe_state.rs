@@ -211,6 +211,8 @@ pub struct TranscribeState {
     lookback_sample_count: usize,
     /// Callback for state events
     callback: Option<Arc<dyn TranscribeStateCallback>>,
+    /// PTT mode - disables automatic segmentation
+    ptt_mode: bool,
 }
 
 impl TranscribeState {
@@ -229,6 +231,17 @@ impl TranscribeState {
             word_break_seek_start_samples: 0,
             lookback_sample_count: 0,
             callback: None,
+            ptt_mode: false,
+        }
+    }
+
+    /// Enable or disable PTT mode.
+    /// In PTT mode, automatic segmentation is disabled - segments are only
+    /// submitted when explicitly ended via on_speech_ended().
+    pub fn set_ptt_mode(&mut self, enabled: bool) {
+        self.ptt_mode = enabled;
+        if enabled {
+            tracing::debug!("[TranscribeState] PTT mode enabled - automatic segmentation disabled");
         }
     }
 
@@ -275,12 +288,22 @@ impl TranscribeState {
 
     /// Process incoming audio samples - writes to ring buffer and checks for overflow/duration
     /// Returns Some(segment) if overflow extraction or grace period extraction occurred
+    /// Note: In PTT mode, automatic segmentation is disabled and this always returns None
     pub fn process_samples(&mut self, samples: &[f32]) -> Option<Vec<f32>> {
         if !self.is_active {
             return None;
         }
 
-        // Check for overflow before writing (if in speech)
+        // In PTT mode, skip all automatic segmentation - just write samples
+        if self.ptt_mode {
+            self.ring_buffer.write(samples);
+            if self.in_speech {
+                self.segment_sample_count += samples.len() as u64;
+            }
+            return None;
+        }
+
+        // Automatic mode: Check for overflow before writing (if in speech)
         let overflow_segment = if self.in_speech
             && self
                 .ring_buffer

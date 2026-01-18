@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 
 /// IPC client for communicating with the FlowSTT service.
@@ -175,6 +175,11 @@ fn forward_event_to_tauri(app_handle: &AppHandle, event: EventType) {
         }
         EventType::TranscriptionComplete(result) => {
             let _ = app_handle.emit("transcription-complete", &result.text);
+            // Request a window redraw to ensure the transcription is visible
+            if let Some(window) = app_handle.get_webview_window("main") {
+                // Trigger a redraw by requesting attention briefly
+                let _ = window.request_user_attention(None);
+            }
         }
         EventType::SpeechStarted => {
             let _ = app_handle.emit("speech-started", ());

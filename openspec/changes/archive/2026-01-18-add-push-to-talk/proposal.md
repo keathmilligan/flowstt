@@ -11,8 +11,9 @@ Push-to-talk provides deterministic behavior: recording starts exactly when the 
 - **New transcription mode**: Add a "Push-to-Talk" mode alongside the existing "Automatic" (VAD-based) mode
 - **Global hotkey system**: Implement platform-specific global hotkey capture that works when the application window is not focused
 - **macOS implementation**: Full implementation using CGEventTap API for system-wide key monitoring
-- **Platform stubs**: Stub implementations for Windows (RegisterHotKey API) and Linux (X11/XCB) to be completed later
-- **Configuration**: Configurable hotkey (default: Right Option key on macOS)
+- **Windows implementation**: Full implementation using Raw Input API for system-wide key monitoring
+- **Platform stubs**: Stub implementation for Linux (X11/XCB) to be completed later
+- **Configuration**: Configurable hotkey (default: Right Alt key)
 - **UI integration**: Mode selection in the GUI and visual feedback when PTT is active
 - **IPC extensions**: New request/response types for PTT configuration and state
 
@@ -28,6 +29,8 @@ Push-to-talk provides deterministic behavior: recording starts exactly when the 
   - `src-common/src/ipc/responses.rs` - Add PTT events
   - `src-service/src/state.rs` - Add PTT state fields
   - `src-service/src/hotkey/` - New module for platform-specific hotkey capture
+  - `src-service/src/hotkey/macos.rs` - macOS CGEventTap implementation
+  - `src-service/src/hotkey/windows.rs` - Windows Raw Input implementation
   - `src-service/src/audio_loop.rs` - Modify to respect PTT mode
   - `src-service/src/ipc/handlers.rs` - Handle PTT requests
   - `src-tauri/src/lib.rs` - Expose PTT commands to frontend

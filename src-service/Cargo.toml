@@ -84,6 +84,11 @@ windows = { version = "0.58", features = [
     "Win32_Devices_FunctionDiscovery",
     "Win32_System_Com_StructuredStorage",
     "Win32_UI_Shell_PropertiesSystem",
+    # For Raw Input hotkey detection
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Input",
+    "Win32_Graphics_Gdi",
 ] }
 
 # Linux-specific dependencies

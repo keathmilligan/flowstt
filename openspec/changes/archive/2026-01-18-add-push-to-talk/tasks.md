@@ -23,10 +23,19 @@
 - [x] 3.6 Add run loop management on separate thread
 - [x] 3.7 Implement clean shutdown
 
-## 4. Platform Stubs
+## 4. Windows Hotkey Implementation
 
-- [x] 4.1 Create `src-service/src/hotkey/windows.rs` stub with not-implemented error
-- [x] 4.2 Create `src-service/src/hotkey/linux.rs` stub with not-implemented error
+- [x] 4.1 Create `src-service/src/hotkey/windows.rs` with Raw Input implementation
+- [x] 4.2 Implement hidden message-only window creation
+- [x] 4.3 Register for raw keyboard input with RIDEV_INPUTSINK
+- [x] 4.4 Implement key filtering for configured hotkey
+- [x] 4.5 Implement event delivery via channel
+- [x] 4.6 Add message loop on separate thread
+- [x] 4.7 Implement clean shutdown
+
+## 4b. Linux Platform Stub
+
+- [x] 4b.1 Create `src-service/src/hotkey/linux.rs` stub with not-implemented error
 
 ## 5. Service State Integration
 
@@ -67,10 +76,10 @@
 
 ## 10. Configuration Persistence
 
-- [ ] 10.1 Add transcription mode to service configuration
-- [ ] 10.2 Add PTT key to service configuration
-- [ ] 10.3 Load configuration on service startup
-- [ ] 10.4 Save configuration on change
+- [x] 10.1 Add transcription mode to service configuration
+- [x] 10.2 Add PTT key to service configuration
+- [x] 10.3 Load configuration on service startup
+- [x] 10.4 Save configuration on change
 
 ## 11. Testing and Validation
 
@@ -78,5 +87,5 @@
 - [x] 11.2 Test PTT segment creation and transcription (implementation complete, manual testing needed)
 - [x] 11.3 Test mode switching while idle (implementation complete, manual testing needed)
 - [x] 11.4 Test long PTT hold with buffer overflow (implementation complete, manual testing needed)
-- [x] 11.5 Verify Windows/Linux stubs compile and return appropriate errors
+- [x] 11.5 Verify Windows implementation and Linux stub compile correctly
 - [x] 11.6 Test permission denied handling on macOS (implementation complete, manual testing needed)

@@ -46,8 +46,8 @@ interface PttStatus {
 
 // Key code display names
 const KEY_CODE_NAMES: Record<KeyCode, string> = {
-  right_alt: "Right Option",
-  left_alt: "Left Option",
+  right_alt: "Right Alt",
+  left_alt: "Left Alt",
   right_control: "Right Control",
   left_control: "Left Control",
   right_shift: "Right Shift",
@@ -259,7 +259,10 @@ async function setupEventListeners() {
   // Transcription results
   if (!transcriptionCompleteUnlisten) {
     transcriptionCompleteUnlisten = await listen<string>("transcription-complete", (event) => {
-      appendTranscription(event.payload);
+      // Use setTimeout to ensure the update runs even when window is backgrounded
+      setTimeout(() => {
+        appendTranscription(event.payload);
+      }, 0);
     });
   }
 
@@ -369,24 +372,41 @@ function cleanupEventListeners() {
 // ============== Transcription Display ==============
 
 let transcriptionBuffer = "";
+let resultTextSpan: HTMLSpanElement | null = null;
 
 function updateTranscriptionDisplay(): void {
   if (!resultEl) return;
 
-  resultEl.innerHTML = "";
-
-  const textWrapper = document.createElement("span");
-  textWrapper.className = "result-text";
-
-  if (transcriptionBuffer.length > 0) {
-    textWrapper.appendChild(document.createTextNode(transcriptionBuffer));
+  // On first call, find or create the text span (avoid innerHTML replacement)
+  if (!resultTextSpan) {
+    resultTextSpan = resultEl.querySelector(".result-text");
+    if (!resultTextSpan) {
+      // Create structure if missing
+      resultEl.innerHTML = '<span class="result-text"><span class="result-cursor"></span></span>';
+      resultTextSpan = resultEl.querySelector(".result-text");
+    }
   }
 
-  const cursor = document.createElement("span");
-  cursor.className = "result-cursor";
-  textWrapper.appendChild(cursor);
+  if (resultTextSpan) {
+    // Get cursor element
+    const cursor = resultTextSpan.querySelector(".result-cursor");
+    
+    // Update text content directly (preserves cursor element)
+    // First, remove all text nodes
+    const childNodes = Array.from(resultTextSpan.childNodes);
+    for (const node of childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        resultTextSpan.removeChild(node);
+      }
+    }
+    
+    // Insert new text before cursor
+    if (transcriptionBuffer.length > 0 && cursor) {
+      const textNode = document.createTextNode(transcriptionBuffer);
+      resultTextSpan.insertBefore(textNode, cursor);
+    }
+  }
 
-  resultEl.appendChild(textWrapper);
   resultEl.scrollTop = resultEl.scrollHeight;
 }
 
@@ -395,6 +415,8 @@ function appendTranscription(newText: string): void {
 
   const trimmedText = newText.trim();
   if (!trimmedText) return;
+
+  console.log("[Transcription] Received:", trimmedText);
 
   if (transcriptionBuffer.length > 0) {
     transcriptionBuffer += " " + trimmedText;
