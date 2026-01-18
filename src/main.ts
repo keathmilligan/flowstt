@@ -259,10 +259,10 @@ async function setupEventListeners() {
   // Transcription results
   if (!transcriptionCompleteUnlisten) {
     transcriptionCompleteUnlisten = await listen<string>("transcription-complete", (event) => {
-      // Use setTimeout to ensure the update runs even when window is backgrounded
-      setTimeout(() => {
-        appendTranscription(event.payload);
-      }, 0);
+      // Always buffer the text immediately (appendTranscription handles this)
+      // The display update will be deferred if window is hidden and applied
+      // when the window becomes visible again via visibilitychange handler
+      appendTranscription(event.payload);
     });
   }
 
@@ -373,9 +373,17 @@ function cleanupEventListeners() {
 
 let transcriptionBuffer = "";
 let resultTextSpan: HTMLSpanElement | null = null;
+// Track if display needs refresh when window becomes visible
+let transcriptionDisplayDirty = false;
 
 function updateTranscriptionDisplay(): void {
   if (!resultEl) return;
+
+  // If document is hidden, mark as dirty and skip update (will refresh on visibility change)
+  if (document.hidden) {
+    transcriptionDisplayDirty = true;
+    return;
+  }
 
   // On first call, find or create the text span (avoid innerHTML replacement)
   if (!resultTextSpan) {
@@ -408,6 +416,17 @@ function updateTranscriptionDisplay(): void {
   }
 
   resultEl.scrollTop = resultEl.scrollHeight;
+  transcriptionDisplayDirty = false;
+}
+
+// Handle visibility change to refresh display when window becomes visible
+function handleVisibilityChange(): void {
+  if (!document.hidden && transcriptionDisplayDirty) {
+    // Use requestAnimationFrame to ensure we're in a paint cycle
+    requestAnimationFrame(() => {
+      updateTranscriptionDisplay();
+    });
+  }
 }
 
 function appendTranscription(newText: string): void {
@@ -666,6 +685,10 @@ window.addEventListener("DOMContentLoaded", () => {
     // Fire and forget - can't await in beforeunload
     invoke("app_disconnect").catch(console.error);
   });
+
+  // Handle visibility change to refresh transcription display when window becomes visible
+  // This ensures updates that arrived while backgrounded are rendered
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 
   // Initialize app
   initializeApp();
