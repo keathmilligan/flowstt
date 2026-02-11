@@ -107,6 +107,41 @@ impl Client {
             _ => Err(IpcError::ParseError("Unexpected response".into())),
         }
     }
+
+    /// Subscribe to events. After this, use `read_event()` to read events.
+    /// This connection becomes dedicated to event streaming.
+    pub async fn subscribe_events(&mut self) -> Result<(), IpcError> {
+        let response = self.request(Request::SubscribeEvents).await?;
+        match response {
+            Response::Subscribed => Ok(()),
+            Response::Error { message } => Err(IpcError::ParseError(message)),
+            _ => Err(IpcError::ParseError("Failed to subscribe to events".into())),
+        }
+    }
+
+    /// Read the next event from the stream (blocking).
+    /// Must call `subscribe_events()` first.
+    pub async fn read_event(&mut self) -> Result<Response, IpcError> {
+        #[cfg(unix)]
+        {
+            let stream = self
+                .stream
+                .as_mut()
+                .ok_or_else(|| IpcError::ParseError("Not connected".into()))?;
+            let (mut reader, _) = stream.split();
+            read_json(&mut reader).await
+        }
+
+        #[cfg(windows)]
+        {
+            let stream = self
+                .stream
+                .as_mut()
+                .ok_or_else(|| IpcError::ParseError("Not connected".into()))?;
+            let (mut reader, _) = tokio::io::split(stream);
+            read_json(&mut reader).await
+        }
+    }
 }
 
 /// Get the path to the service executable.

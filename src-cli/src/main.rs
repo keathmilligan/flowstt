@@ -7,8 +7,8 @@ mod client;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::Colorize;
-use flowstt_common::ipc::{Request, Response};
-use flowstt_common::{AudioSourceType, RecordingMode};
+use flowstt_common::ipc::{EventType, Request, Response};
+use flowstt_common::{AudioSourceType, RecordingMode, TranscriptionMode};
 
 use client::Client;
 
@@ -227,35 +227,80 @@ async fn run(cli: Cli) -> Result<(), String> {
                         println!("Press Ctrl+C to stop, or run 'flowstt stop'");
                     }
 
-                    // Subscribe to events and stream transcription results
-                    let subscribe_response = client
-                        .request(Request::SubscribeEvents)
+                    // Create a dedicated event client (separate connection)
+                    let mut event_client = Client::new();
+                    event_client
+                        .connect_or_spawn()
                         .await
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|e| format!("Failed to connect event client: {}", e))?;
 
-                    if !matches!(subscribe_response, Response::Subscribed) {
-                        return Err("Failed to subscribe to events".into());
-                    }
+                    event_client
+                        .subscribe_events()
+                        .await
+                        .map_err(|e| format!("Failed to subscribe: {}", e))?;
 
-                    // Stream events until shutdown or Ctrl+C
+                    // Set up Ctrl+C handler
+                    let shutdown = tokio::signal::ctrl_c();
+                    tokio::pin!(shutdown);
+
+                    // Stream events until Ctrl+C or capture stops
                     loop {
-                        // Read next event (blocking)
-                        // TODO: Implement proper event streaming
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-                        // Check if we should exit
-                        // For now, just print status
-                        let status_response = client
-                            .request(Request::GetStatus)
-                            .await
-                            .map_err(|e| e.to_string())?;
-
-                        if let Response::Status(status) = status_response {
-                            if !status.capturing {
+                        tokio::select! {
+                            _ = &mut shutdown => {
                                 if !cli.quiet {
-                                    println!("\n{}", "Transcription stopped".yellow());
+                                    eprintln!("\n{}", "Interrupted".yellow());
                                 }
                                 break;
+                            }
+                            event_result = event_client.read_event() => {
+                                match event_result {
+                                    Ok(Response::Event { event }) => {
+                                        match event {
+                                            EventType::TranscriptionComplete(result) => {
+                                                if matches!(cli.format, OutputFormat::Json) {
+                                                    println!("{}", serde_json::to_string(&result).unwrap());
+                                                } else {
+                                                    println!("{}", result.text);
+                                                }
+                                            }
+                                            EventType::SpeechStarted => {
+                                                if cli.verbose {
+                                                    eprintln!("{}", "[speech started]".dimmed());
+                                                }
+                                            }
+                                            EventType::SpeechEnded { duration_ms } => {
+                                                if cli.verbose {
+                                                    eprintln!("{}", format!("[speech ended: {}ms]", duration_ms).dimmed());
+                                                }
+                                            }
+                                            EventType::CaptureStateChanged { capturing, error } => {
+                                                if !capturing {
+                                                    if let Some(err) = error {
+                                                        eprintln!("{}: {}", "Capture error".red(), err);
+                                                    } else if !cli.quiet {
+                                                        eprintln!("{}", "Capture stopped".yellow());
+                                                    }
+                                                    break;
+                                                }
+                                            }
+                                            EventType::Shutdown => {
+                                                if !cli.quiet {
+                                                    eprintln!("{}", "Service shutting down".yellow());
+                                                }
+                                                break;
+                                            }
+                                            // Ignore other events (visualization, PTT, etc.)
+                                            _ => {}
+                                        }
+                                    }
+                                    Ok(_) => {
+                                        // Non-event response in stream, ignore
+                                    }
+                                    Err(e) => {
+                                        eprintln!("{}: {}", "Event stream error".red(), e);
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -282,6 +327,19 @@ async fn run(cli: Cli) -> Result<(), String> {
                             "idle".dimmed()
                         };
                         println!("Capture: {}", capture_str);
+
+                        let mode_str = match status.transcription_mode {
+                            TranscriptionMode::Automatic => "automatic",
+                            TranscriptionMode::PushToTalk => "push-to-talk",
+                        };
+                        println!("Mode: {}", mode_str);
+
+                        if let Some(ref source) = status.source1_id {
+                            println!("Source: {}", source.dimmed());
+                        }
+                        if let Some(ref source2) = status.source2_id {
+                            println!("Source 2: {}", source2.dimmed());
+                        }
 
                         if let Some(error) = &status.error {
                             println!("Error: {}", error.red());

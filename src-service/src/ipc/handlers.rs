@@ -336,6 +336,11 @@ pub async fn handle_request(request: Request) -> Response {
                 status.queue_depth = get_transcription_queue().queue_depth();
             }
 
+            // Include current configuration in status
+            status.source1_id = state.source1_id.clone();
+            status.source2_id = state.source2_id.clone();
+            status.transcription_mode = state.transcription_mode;
+
             Response::Status(status)
         }
 

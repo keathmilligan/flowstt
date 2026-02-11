@@ -21,12 +21,15 @@ interface CudaStatus {
 }
 
 // CaptureStatus matches backend TranscribeStatus
-// interface CaptureStatus {
-//   capturing: boolean;
-//   in_speech: boolean;
-//   queue_depth: number;
-//   error: string | null;
-// }
+interface CaptureStatus {
+  capturing: boolean;
+  in_speech: boolean;
+  queue_depth: number;
+  error: string | null;
+  source1_id: string | null;
+  source2_id: string | null;
+  transcription_mode: TranscriptionMode;
+}
 
 // Transcription mode matching backend
 type TranscriptionMode = "automatic" | "push_to_talk";
@@ -103,16 +106,30 @@ let miniWaveformRenderer: MiniWaveformRenderer | null = null;
 // CUDA indicator
 let cudaIndicator: HTMLElement | null = null;
 
-async function loadDevices() {
+async function loadDevices(currentSource1?: string | null, currentSource2?: string | null) {
   try {
     allDevices = await invoke<AudioDevice[]>("list_all_sources");
 
     // Populate both source dropdowns
-    populateSourceDropdown(source1Select, true);  // Select first device
-    populateSourceDropdown(source2Select, false); // Select "None"
+    populateSourceDropdown(source1Select, true);  // Default: select first device
+    populateSourceDropdown(source2Select, false); // Default: select "None"
 
-    // After populating, configure sources if we have any
-    await onSourceChange();
+    // If the service already has sources configured, select those instead
+    if (currentSource1 && source1Select) {
+      const exists = allDevices.some(d => d.id === currentSource1);
+      if (exists) {
+        source1Select.value = currentSource1;
+      }
+    }
+    if (currentSource2 && source2Select) {
+      const exists = allDevices.some(d => d.id === currentSource2);
+      if (exists) {
+        source2Select.value = currentSource2;
+      }
+    }
+
+    // Don't auto-call onSourceChange -- the service may already be capturing.
+    // Sources are only changed when the user explicitly changes a dropdown.
   } catch (error) {
     console.error("Failed to load devices:", error);
     if (source1Select) {
@@ -684,7 +701,8 @@ async function initializeApp() {
   // Populate PTT key dropdown
   populatePttKeySelect();
   
-  // Set up event listeners
+  // Set up event listeners (must be done before connect_events so we
+  // catch the synthetic CaptureStateChanged sent on subscribe)
   await setupEventListeners();
   
   // Connect to service event stream (service is already operational)
@@ -697,12 +715,41 @@ async function initializeApp() {
     return;
   }
   
-  // Load initial data
-  await loadDevices();
+  // Fetch current service status to sync UI with existing state.
+  // The service may already be capturing if started independently.
+  let currentSource1: string | null = null;
+  let currentSource2: string | null = null;
+  try {
+    const status = await invoke<CaptureStatus>("get_status");
+    console.log("Service status:", status);
+    
+    // Sync local state with service
+    isCapturing = status.capturing;
+    inSpeechSegment = status.in_speech;
+    transcribeQueueDepth = status.queue_depth;
+    transcriptionMode = status.transcription_mode;
+    currentSource1 = status.source1_id;
+    currentSource2 = status.source2_id;
+    
+    if (status.error) {
+      setStatus(`Error: ${status.error}`, "error");
+    }
+  } catch (error) {
+    console.error("Failed to get service status:", error);
+  }
+  
+  // Load devices and set dropdowns to match current service configuration
+  await loadDevices(currentSource1, currentSource2);
   checkModelStatus();
   checkCudaStatus();
   loadPttStatus();
   
-  // Update status based on current state
+  // Update status display based on synced state
   updateStatusDisplay();
+  
+  // If capturing, start waveform renderer
+  if (isCapturing) {
+    miniWaveformRenderer?.clear();
+    miniWaveformRenderer?.start();
+  }
 }

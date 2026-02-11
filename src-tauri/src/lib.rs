@@ -72,7 +72,6 @@ async fn set_sources(
     source1_id: Option<String>,
     source2_id: Option<String>,
     state: State<'_, AppState>,
-    app_handle: AppHandle,
 ) -> Result<(), String> {
     let response = send_request(
         &state.ipc,
@@ -84,16 +83,7 @@ async fn set_sources(
     .await?;
 
     match response {
-        Response::Ok => {
-            // Start event forwarding if not already running
-            start_event_forwarding(
-                state.ipc.clone(),
-                app_handle,
-                state.event_task_running.clone(),
-            )
-            .await;
-            Ok(())
-        }
+        Response::Ok => Ok(()),
         Response::Error { message } => Err(message),
         _ => Err("Unexpected response".into()),
     }
@@ -188,6 +178,9 @@ struct LocalStatus {
     in_speech: bool,
     queue_depth: usize,
     error: Option<String>,
+    source1_id: Option<String>,
+    source2_id: Option<String>,
+    transcription_mode: TranscriptionMode,
 }
 
 /// Get current status
@@ -201,6 +194,9 @@ async fn get_status(state: State<'_, AppState>) -> Result<LocalStatus, String> {
             in_speech: status.in_speech,
             queue_depth: status.queue_depth,
             error: status.error,
+            source1_id: status.source1_id,
+            source2_id: status.source2_id,
+            transcription_mode: status.transcription_mode,
         }),
         Response::Error { message } => Err(message),
         _ => Err("Unexpected response".into()),

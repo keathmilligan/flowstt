@@ -13,6 +13,7 @@ use tracing::{debug, error, info, warn};
 
 use super::handlers::handle_request;
 use crate::is_shutdown_requested;
+use crate::state::get_service_state;
 
 /// Event broadcaster for subscribed clients
 pub type EventSender = broadcast::Sender<Response>;
@@ -303,7 +304,8 @@ where
                 info!("Received request: {:?}", request);
 
                 // Check if this is a subscribe request
-                if matches!(request, Request::SubscribeEvents) {
+                let is_subscribe = matches!(request, Request::SubscribeEvents);
+                if is_subscribe {
                     subscribed = true;
                     event_receiver = Some(get_event_sender().subscribe());
                 }
@@ -315,6 +317,21 @@ where
                 // Send response
                 let mut w = writer.lock().await;
                 write_json(&mut *w, &response).await?;
+
+                // After subscribing, send current capture state so the
+                // client immediately knows whether transcription is active
+                if is_subscribe {
+                    let state_arc = get_service_state();
+                    let state = state_arc.lock().await;
+                    let synthetic = Response::Event {
+                        event: EventType::CaptureStateChanged {
+                            capturing: state.transcribe_status.capturing,
+                            error: state.transcribe_status.error.clone(),
+                        },
+                    };
+                    drop(state);
+                    write_json(&mut *w, &synthetic).await?;
+                }
             }
             Ok(Err(e)) => {
                 // Read error

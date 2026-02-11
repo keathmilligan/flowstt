@@ -147,6 +147,14 @@ pub struct TranscribeStatus {
     /// Error message if capture failed (e.g., invalid source)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Currently configured primary audio source ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source1_id: Option<String>,
+    /// Currently configured secondary audio source ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source2_id: Option<String>,
+    /// Current transcription mode
+    pub transcription_mode: TranscriptionMode,
 }
 
 /// Status of the Whisper model.
