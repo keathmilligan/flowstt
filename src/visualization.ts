@@ -67,6 +67,17 @@ window.addEventListener("DOMContentLoaded", async () => {
     e.preventDefault();
   });
 
+  // Suppress all default keyboard behaviour in this decorationless window.
+  // See main.ts for detailed explanation of why this is needed.
+  const suppressKeyHandler = (e: KeyboardEvent) => {
+    if (e.key === "F4" && e.altKey) return;
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === "SELECT" || tag === "INPUT" || tag === "BUTTON") return;
+    e.preventDefault();
+  };
+  document.addEventListener("keydown", suppressKeyHandler);
+  document.addEventListener("keyup", suppressKeyHandler);
+
   // Get canvas elements
   waveformCanvas = document.querySelector("#waveform-canvas");
   spectrogramCanvas = document.querySelector("#spectrogram-canvas");

@@ -632,6 +632,30 @@ window.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
   });
 
+  // Suppress all default keyboard behaviour in this decorationless window.
+  // WebView2/Chromium has many built-in shortcuts (Ctrl+P print, Ctrl+F find,
+  // Alt menu activation, F5 reload, etc.) that are unwanted in a dedicated
+  // app window. We block everything except:
+  //   - Alt+F4: allowed through so the OS/Tauri can handle close-to-tray
+  //   - Form-element interactions: arrow keys, Enter, Space, Tab, and typed
+  //     characters are allowed when a <select>, <input>, or <button> has focus
+  const suppressKeyHandler = (e: KeyboardEvent) => {
+    // Allow Alt+F4 (window close / hide-to-tray)
+    if (e.key === "F4" && e.altKey) return;
+
+    // Allow normal interaction with form controls
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === "SELECT" || tag === "INPUT" || tag === "BUTTON") {
+      // Let the form element handle its own keys (arrows, Enter, Space,
+      // Tab, typed characters for <select> search, etc.)
+      return;
+    }
+
+    e.preventDefault();
+  };
+  document.addEventListener("keydown", suppressKeyHandler);
+  document.addEventListener("keyup", suppressKeyHandler);
+
   // Get DOM elements
   source1Select = document.querySelector("#source1-select");
   source2Select = document.querySelector("#source2-select");
