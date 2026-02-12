@@ -132,23 +132,40 @@ pnpm tauri dev --features cuda
 ## Development
 
 ```bash
-pnpm install
-pnpm tauri dev      # development (CPU-only)
-pnpm tauri build    # production (CPU-only)
+pnpm install        # install frontend dependencies
+make build          # build all components (release)
+make build-debug    # build all components (debug, faster compilation)
+make build-cuda     # build with CUDA GPU acceleration
 ```
 
-### Building Individual Components
+### Running Components
+
+Each component can be built and run individually via `make` or `cargo`:
 
 ```bash
-# Build the CLI only
-cargo build -p flowstt-cli --release
+# Service (background daemon - must be running for CLI/GUI)
+make run-service              # build + run (debug)
+cargo run -p flowstt-service  # equivalent cargo command
 
-# Build the background service only
-cargo build -p flowstt-service --release
+# CLI
+make run-cli                  # build + run (debug)
+cargo run -p flowstt-cli      # equivalent cargo command
 
-# Build the GUI application only
-pnpm tauri build
+# GUI app
+make run-app                  # build + run (debug)
+cargo run -p flowstt-app      # equivalent cargo command
 ```
+
+Release variants are available as `run-service-release`, `run-app-release`, `run-cli-release`.
+
+### Quality Checks
+
+```bash
+make lint           # clippy + tsc --noEmit
+make test           # cargo test --workspace
+```
+
+Run `make help` for all available targets.
 
 ### Architecture
 
