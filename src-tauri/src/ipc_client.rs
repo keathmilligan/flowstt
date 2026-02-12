@@ -65,24 +65,76 @@ impl IpcClient {
 
     /// Try to connect, spawning the service if needed.
     pub async fn connect_or_spawn(&mut self) -> Result<(), IpcError> {
+        let t0 = std::time::Instant::now();
+
         // First try to connect
-        if self.connect().await.is_ok() {
-            return Ok(());
+        match self.connect().await {
+            Ok(()) => {
+                eprintln!(
+                    "[IpcClient] connect_or_spawn: connected on first attempt (+{}ms)",
+                    t0.elapsed().as_millis()
+                );
+                return Ok(());
+            }
+            Err(ref e) => {
+                eprintln!(
+                    "[IpcClient] connect_or_spawn: first attempt failed: {} (+{}ms)",
+                    e,
+                    t0.elapsed().as_millis()
+                );
+            }
+        }
+
+        // The initial connect failed. On Windows this can happen transiently
+        // when the named pipe server is between accept cycles (all pipe
+        // instances are busy serving other clients). Retry a few times with
+        // a short delay before assuming the service isn't running at all.
+        for i in 0..5 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            match self.connect().await {
+                Ok(()) => {
+                    eprintln!(
+                        "[IpcClient] connect_or_spawn: connected on retry {} (+{}ms)",
+                        i + 1,
+                        t0.elapsed().as_millis()
+                    );
+                    return Ok(());
+                }
+                Err(ref e) => {
+                    eprintln!(
+                        "[IpcClient] connect_or_spawn: retry {} failed: {} (+{}ms)",
+                        i + 1,
+                        e,
+                        t0.elapsed().as_millis()
+                    );
+                }
+            }
         }
 
         // Service not running, try to spawn it
-        eprintln!("[IpcClient] Service not running, starting...");
+        eprintln!(
+            "[IpcClient] connect_or_spawn: service not running, spawning (+{}ms)",
+            t0.elapsed().as_millis()
+        );
         spawn_service()?;
 
         // Wait for service to be ready (up to 5 seconds)
-        for _ in 0..50 {
+        for i in 0..50 {
             tokio::time::sleep(Duration::from_millis(100)).await;
             if self.connect().await.is_ok() {
-                eprintln!("[IpcClient] Service started and connected");
+                eprintln!(
+                    "[IpcClient] connect_or_spawn: service started, connected on poll {} (+{}ms)",
+                    i + 1,
+                    t0.elapsed().as_millis()
+                );
                 return Ok(());
             }
         }
 
+        eprintln!(
+            "[IpcClient] connect_or_spawn: TIMEOUT after {}ms",
+            t0.elapsed().as_millis()
+        );
         Err(IpcError::ParseError(
             "Service failed to start within timeout".into(),
         ))
@@ -90,9 +142,24 @@ impl IpcClient {
 
     /// Send a request and receive a response.
     pub async fn request(&mut self, request: Request) -> Result<Response, IpcError> {
+        let t0 = std::time::Instant::now();
+        let req_name = format!("{:?}", request);
+        // Truncate long debug representations (e.g. large payloads)
+        let req_label = if req_name.len() > 60 {
+            format!("{}...", &req_name[..60])
+        } else {
+            req_name
+        };
+
         // Ensure we're connected
         if self.stream.is_none() {
+            eprintln!("[IpcClient] request({}): not connected, calling connect_or_spawn", req_label);
             self.connect_or_spawn().await?;
+            eprintln!(
+                "[IpcClient] request({}): connect_or_spawn done (+{}ms)",
+                req_label,
+                t0.elapsed().as_millis()
+            );
         }
 
         #[cfg(unix)]
@@ -103,7 +170,13 @@ impl IpcClient {
                 .ok_or_else(|| IpcError::ParseError("Not connected".into()))?;
             let (mut reader, mut writer) = stream.split();
             write_json(&mut writer, &request).await?;
-            read_json(&mut reader).await
+            let resp = read_json(&mut reader).await;
+            eprintln!(
+                "[IpcClient] request({}) completed in {}ms",
+                req_label,
+                t0.elapsed().as_millis()
+            );
+            resp
         }
 
         #[cfg(windows)]
@@ -114,17 +187,28 @@ impl IpcClient {
                 .ok_or_else(|| IpcError::ParseError("Not connected".into()))?;
             let (mut reader, mut writer) = tokio::io::split(stream);
             write_json(&mut writer, &request).await?;
-            read_json(&mut reader).await
+            let resp = read_json(&mut reader).await;
+            eprintln!(
+                "[IpcClient] request({}) completed in {}ms",
+                req_label,
+                t0.elapsed().as_millis()
+            );
+            resp
         }
     }
 
     /// Subscribe to events and forward them to Tauri.
     pub async fn subscribe_and_forward(&mut self, app_handle: AppHandle) -> Result<(), IpcError> {
+        let t0 = std::time::Instant::now();
         // Subscribe to events
         let response = self.request(Request::SubscribeEvents).await?;
         if !matches!(response, Response::Subscribed) {
             return Err(IpcError::ParseError("Failed to subscribe to events".into()));
         }
+        eprintln!(
+            "[Startup] subscribe_and_forward: subscribed (+{}ms)",
+            t0.elapsed().as_millis()
+        );
 
         // Read events and forward to Tauri
         loop {

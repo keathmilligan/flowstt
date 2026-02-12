@@ -4,6 +4,15 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { MiniWaveformRenderer, VisualizationPayload } from "./renderers";
 
+// Startup timing - marks the moment the JS module is first evaluated
+const JS_MODULE_LOAD_TIME = performance.now();
+// Log startup diagnostics to stderr via Tauri command so they appear
+// in the same terminal stream as the Rust-side diagnostics.
+function startupLog(msg: string) {
+  invoke("startup_log", { message: msg });
+}
+startupLog(`JS module evaluated at ${JS_MODULE_LOAD_TIME.toFixed(0)}ms after page origin`);
+
 interface AudioDevice {
   id: string;
   name: string;
@@ -609,24 +618,45 @@ async function checkCudaStatus() {
 // ============== Window Management ==============
 
 async function openVisualizationWindow() {
-  const vizWindow = await WebviewWindow.getByLabel("visualization");
-  if (!vizWindow) {
-    console.error("Visualization window not found");
+  // Check if the window already exists (was previously created)
+  const existing = await WebviewWindow.getByLabel("visualization");
+  if (existing) {
+    const isVisible = await existing.isVisible();
+    if (isVisible) {
+      await existing.setFocus();
+    } else {
+      await existing.show();
+      await existing.setFocus();
+    }
     return;
   }
 
-  const isVisible = await vizWindow.isVisible();
-  if (isVisible) {
-    await vizWindow.setFocus();
-  } else {
-    await vizWindow.show();
-    await vizWindow.setFocus();
-  }
+  // Create the window on demand (not pre-created at startup to avoid
+  // the cost of initializing a second WebView2 instance during launch)
+  const vizWindow = new WebviewWindow("visualization", {
+    url: "visualization.html",
+    title: "FlowSTT Visualization",
+    width: 900,
+    height: 700,
+    minWidth: 800,
+    minHeight: 600,
+    resizable: true,
+    decorations: false,
+    transparent: true,
+    shadow: false,
+    center: true,
+  });
+
+  vizWindow.once("tauri://error", (e) => {
+    console.error("Failed to create visualization window:", e.payload);
+  });
 }
 
 // ============== Initialization ==============
 
 window.addEventListener("DOMContentLoaded", () => {
+  startupLog(`DOMContentLoaded fired at ${performance.now().toFixed(0)}ms (module loaded at ${JS_MODULE_LOAD_TIME.toFixed(0)}ms)`);
+
   // Disable default context menu
   document.addEventListener("contextmenu", (e) => {
     e.preventDefault();
@@ -719,6 +749,11 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 async function initializeApp() {
+  const t0 = performance.now();
+  const elapsed = () => `${(performance.now() - t0).toFixed(0)}ms`;
+
+  startupLog(`initializeApp started at ${performance.now().toFixed(0)}ms`);
+
   // Set initial status
   setStatus("Initializing...");
   
@@ -728,14 +763,19 @@ async function initializeApp() {
   // Set up event listeners (must be done before connect_events so we
   // catch the synthetic CaptureStateChanged sent on subscribe)
   await setupEventListeners();
+  startupLog(`setupEventListeners done (+${elapsed()})`);
   
   // Connect to service event stream (service is already operational)
   try {
     await invoke("connect_events");
-    console.log("Connected to service event stream");
+    startupLog(`connect_events done (+${elapsed()})`);
   } catch (error) {
-    console.error("Failed to connect to service:", error);
+    startupLog(`connect_events FAILED (+${elapsed()}): ${error}`);
     setStatus(`Connection error: ${error}`, "error");
+    // Show window even on error so the user can see the error message
+    const mainWindow = getCurrentWindow();
+    await mainWindow.show();
+    await mainWindow.setFocus();
     return;
   }
   
@@ -745,7 +785,7 @@ async function initializeApp() {
   let currentSource2: string | null = null;
   try {
     const status = await invoke<CaptureStatus>("get_status");
-    console.log("Service status:", status);
+    startupLog(`get_status done (+${elapsed()})`);
     
     // Sync local state with service
     isCapturing = status.capturing;
@@ -759,11 +799,13 @@ async function initializeApp() {
       setStatus(`Error: ${status.error}`, "error");
     }
   } catch (error) {
-    console.error("Failed to get service status:", error);
+    startupLog(`get_status FAILED (+${elapsed()}): ${error}`);
   }
   
   // Load devices and set dropdowns to match current service configuration
   await loadDevices(currentSource1, currentSource2);
+  startupLog(`loadDevices done (+${elapsed()})`);
+
   checkModelStatus();
   checkCudaStatus();
   loadPttStatus();
@@ -776,4 +818,12 @@ async function initializeApp() {
     miniWaveformRenderer?.clear();
     miniWaveformRenderer?.start();
   }
+
+  // Show the main window now that the UI is fully initialized and connected.
+  // The window starts hidden (visible: false in tauri.conf.json) to avoid
+  // showing a blank/unresponsive window while waiting for the service connection.
+  const mainWindow = getCurrentWindow();
+  await mainWindow.show();
+  await mainWindow.setFocus();
+  startupLog(`window shown - startup complete (+${elapsed()})`);
 }

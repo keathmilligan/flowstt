@@ -125,6 +125,25 @@ fn main() {
         .expect("Failed to create Tokio runtime");
 
     runtime.block_on(async {
+        // Start the IPC server first so clients can connect immediately.
+        // Heavy subsystem initialization (audio, transcription) runs concurrently
+        // below. IPC handlers already handle the case where backends aren't ready
+        // yet (e.g. ListDevices returns empty, GetStatus shows not capturing).
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let ipc_server_handle = tokio::spawn(async {
+            if let Err(e) = ipc::run_server(Some(ready_tx)).await {
+                if !is_shutdown_requested() {
+                    error!("IPC server error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        });
+
+        // Wait until the IPC server is actually listening before proceeding.
+        // This ensures the named pipe / socket exists when we continue, so any
+        // client that was spawned alongside us can connect immediately.
+        let _ = ready_rx.await;
+
         // Initialize platform-specific audio backends
         info!("Initializing audio backends...");
         if let Err(e) = platform::init_audio_backend() {
@@ -172,13 +191,10 @@ fn main() {
             }
         }
 
-        // Start the IPC server (runs until shutdown)
-        if let Err(e) = ipc::run_server().await {
-            if !is_shutdown_requested() {
-                error!("IPC server error: {}", e);
-                std::process::exit(1);
-            }
-        }
+        info!("Service initialization complete");
+
+        // Wait for IPC server to finish (runs until shutdown)
+        let _ = ipc_server_handle.await;
     });
 
     // Cleanup

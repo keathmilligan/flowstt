@@ -8,7 +8,7 @@ use flowstt_common::ipc::{
     get_socket_path, read_json, write_json, EventType, IpcError, Request, Response,
 };
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, oneshot, Mutex};
 use tracing::{debug, error, info, warn};
 
 use super::handlers::handle_request;
@@ -85,8 +85,12 @@ pub fn broadcast_event(event: Response) {
 }
 
 /// Run the IPC server until shutdown.
+///
+/// If `ready_tx` is provided, it is notified once the server is listening and
+/// ready to accept client connections. This allows callers to run heavy
+/// initialization concurrently without racing the first client connect.
 #[cfg(unix)]
-pub async fn run_server() -> Result<(), IpcError> {
+pub async fn run_server(ready_tx: Option<oneshot::Sender<()>>) -> Result<(), IpcError> {
     use tokio::net::UnixListener;
 
     let socket_path = get_socket_path();
@@ -107,6 +111,11 @@ pub async fn run_server() -> Result<(), IpcError> {
     // Bind to socket
     let listener = UnixListener::bind(&socket_path).map_err(IpcError::Io)?;
     info!("IPC server listening on {:?}", socket_path);
+
+    // Signal readiness - the socket is now bound and accepting connections
+    if let Some(tx) = ready_tx {
+        let _ = tx.send(());
+    }
 
     loop {
         if is_shutdown_requested() {
@@ -151,8 +160,13 @@ async fn handle_unix_client(stream: tokio::net::UnixStream) -> Result<(), IpcErr
 }
 
 /// Run the IPC server on Windows using named pipes.
+///
+/// If `ready_tx` is provided, it is notified once the first pipe instance has
+/// been created and is ready to accept client connections. This allows callers
+/// to run heavy initialization concurrently without racing the first client
+/// connect.
 #[cfg(windows)]
-pub async fn run_server() -> Result<(), IpcError> {
+pub async fn run_server(mut ready_tx: Option<oneshot::Sender<()>>) -> Result<(), IpcError> {
     use tokio::net::windows::named_pipe::{PipeMode, ServerOptions};
 
     let pipe_name = get_socket_path();
@@ -178,6 +192,12 @@ pub async fn run_server() -> Result<(), IpcError> {
                 continue;
             }
         };
+
+        // Signal readiness after the first pipe instance is successfully created.
+        // At this point clients can connect via the named pipe.
+        if let Some(tx) = ready_tx.take() {
+            let _ = tx.send(());
+        }
 
         // Wait for client with timeout
         let connect_result =

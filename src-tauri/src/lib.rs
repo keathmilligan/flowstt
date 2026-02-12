@@ -11,6 +11,7 @@ use flowstt_common::{AudioDevice, KeyCode, RecordingMode, TranscriptionMode};
 use ipc_client::{IpcClient, SharedIpcClient};
 use std::env;
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 
@@ -47,7 +48,15 @@ struct AppState {
 
 /// Helper to send a request to the service and handle errors.
 async fn send_request(ipc: &SharedIpcClient, request: Request) -> Result<Response, String> {
+    let t0 = Instant::now();
     let mut client = ipc.client.lock().await;
+    let lock_ms = t0.elapsed().as_millis();
+    if lock_ms > 5 {
+        eprintln!(
+            "[Startup] send_request: waited {}ms for ipc lock",
+            lock_ms
+        );
+    }
     client
         .request(request)
         .await
@@ -258,31 +267,63 @@ async fn get_ptt_status(state: State<'_, AppState>) -> Result<LocalPttStatus, St
     }
 }
 
+/// Log a startup diagnostic message from the frontend to stderr.
+/// This ensures all startup timing is visible in a single stream (the terminal).
+#[tauri::command]
+fn startup_log(message: String) {
+    eprintln!("[Startup/JS] {}", message);
+}
+
 /// Connect to the service and start event forwarding.
 /// The service is already operational; this just subscribes to its event stream.
+///
+/// This eagerly connects the shared IPC client (used by all request/response
+/// commands) before spawning the long-lived event stream task with its own
+/// dedicated connection. Connecting them sequentially avoids a race where both
+/// clients compete for the single available named-pipe instance on the server,
+/// which would cause one of them to fall through to the 5-second spawn-retry
+/// loop even though the service is already running.
 #[tauri::command]
 async fn connect_events(state: State<'_, AppState>, app_handle: AppHandle) -> Result<(), String> {
-    // Start event forwarding (connects and subscribes to service events)
-    start_event_forwarding(
-        state.ipc.clone(),
-        app_handle,
-        state.event_task_running.clone(),
-    )
-    .await;
+    let t0 = Instant::now();
+    eprintln!("[Startup] connect_events: begin");
+
+    // Eagerly connect the shared request/response client first. This ensures
+    // it has an established connection before the event task's connection
+    // attempt consumes the next available pipe instance.
+    {
+        let mut client = state.ipc.client.lock().await;
+        eprintln!(
+            "[Startup] connect_events: acquired ipc lock (+{}ms)",
+            t0.elapsed().as_millis()
+        );
+        client
+            .connect_or_spawn()
+            .await
+            .map_err(|e| format!("IPC connection error: {}", e))?;
+        eprintln!(
+            "[Startup] connect_events: shared client connected (+{}ms)",
+            t0.elapsed().as_millis()
+        );
+    }
+
+    // Now start event forwarding with its own dedicated connection
+    start_event_forwarding(app_handle, state.event_task_running.clone()).await;
+    eprintln!(
+        "[Startup] connect_events: done (+{}ms)",
+        t0.elapsed().as_millis()
+    );
     Ok(())
 }
 
 /// Start the event forwarding task.
 /// This subscribes to service events and forwards them to the Tauri frontend.
-async fn start_event_forwarding(
-    _ipc: SharedIpcClient,
-    app_handle: AppHandle,
-    running: Arc<Mutex<bool>>,
-) {
+async fn start_event_forwarding(app_handle: AppHandle, running: Arc<Mutex<bool>>) {
     // Check if already running
     {
         let is_running = running.lock().await;
         if *is_running {
+            eprintln!("[Startup] start_event_forwarding: already running, skipping");
             return;
         }
     }
@@ -296,15 +337,26 @@ async fn start_event_forwarding(
     // Spawn event forwarding task
     let running_clone = running.clone();
     tokio::spawn(async move {
+        let t0 = Instant::now();
+        eprintln!("[Startup] EventForwarder task: begin");
+
         // Create a dedicated client for event streaming
         let mut event_client = IpcClient::new();
 
         if let Err(e) = event_client.connect_or_spawn().await {
-            eprintln!("[EventForwarder] Failed to connect: {}", e);
+            eprintln!(
+                "[Startup] EventForwarder task: connect FAILED (+{}ms): {}",
+                t0.elapsed().as_millis(),
+                e
+            );
             let mut is_running = running_clone.lock().await;
             *is_running = false;
             return;
         }
+        eprintln!(
+            "[Startup] EventForwarder task: connected (+{}ms)",
+            t0.elapsed().as_millis()
+        );
 
         // This will run until the connection is closed
         if let Err(e) = event_client.subscribe_and_forward(app_handle).await {
@@ -319,6 +371,8 @@ async fn start_event_forwarding(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let app_t0 = Instant::now();
+    eprintln!("[Startup] run() entered");
     configure_wayland_workarounds();
 
     tauri::Builder::default()
@@ -326,11 +380,19 @@ pub fn run() {
             ipc: SharedIpcClient::new(),
             event_task_running: Arc::new(Mutex::new(false)),
         })
-        .setup(|app| {
+        .setup(move |app| {
+            eprintln!(
+                "[Startup] setup() hook called (+{}ms from run())",
+                app_t0.elapsed().as_millis()
+            );
             // Set up the system tray
             if let Err(e) = tray::setup_tray(app) {
                 eprintln!("[FlowSTT] Failed to set up system tray: {}", e);
             }
+            eprintln!(
+                "[Startup] setup() hook done (+{}ms from run())",
+                app_t0.elapsed().as_millis()
+            );
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -346,6 +408,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            startup_log,
             list_all_sources,
             set_sources,
             set_aec_enabled,
