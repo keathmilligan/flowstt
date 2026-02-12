@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowSTT Settings</title>
+    <link rel="stylesheet" href="/src/config.css">
+</head>
+<body>
+    <div class="config-container" data-tauri-drag-region>
+        <button class="close-btn" id="close-btn" title="Close">&times;</button>
+        <div class="config-header" data-tauri-drag-region>
+            <h2 class="config-title">Settings</h2>
+        </div>
+        <div class="config-content">
+            <div class="config-field">
+                <label for="source1-select">Primary Input (Mic)</label>
+                <select id="source1-select">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div class="config-field">
+                <label for="source2-select">Reference (System)</label>
+                <select id="source2-select">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div class="config-field">
+                <label for="ptt-key-select">Push-to-Talk Key</label>
+                <select id="ptt-key-select">
+                    <!-- Populated by JavaScript -->
+                </select>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="/src/config.ts"></script>
+</body>
+</html>

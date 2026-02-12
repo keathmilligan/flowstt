@@ -9,6 +9,7 @@ pub mod windows;
 /// Menu item identifiers.
 pub mod menu_ids {
     pub const SHOW: &str = "show";
+    pub const SETTINGS: &str = "settings";
     pub const ABOUT: &str = "about";
     pub const EXIT: &str = "exit";
 }
@@ -16,6 +17,7 @@ pub mod menu_ids {
 /// Menu item labels.
 pub mod menu_labels {
     pub const SHOW: &str = "Show";
+    pub const SETTINGS: &str = "Settings";
     pub const ABOUT: &str = "About";
     pub const EXIT: &str = "Exit";
 }

@@ -12,6 +12,7 @@ export default defineConfig(async () => ({
         main: "index.html",
         visualization: "visualization.html",
         about: "about.html",
+        config: "config.html",
       },
     },
   },

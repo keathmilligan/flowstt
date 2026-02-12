@@ -13,11 +13,6 @@ function startupLog(msg: string) {
 }
 startupLog(`JS module evaluated at ${JS_MODULE_LOAD_TIME.toFixed(0)}ms after page origin`);
 
-interface AudioDevice {
-  id: string;
-  name: string;
-}
-
 interface ModelStatus {
   available: boolean;
   path: string;
@@ -76,10 +71,6 @@ const KEY_CODE_NAMES: Record<KeyCode, string> = {
 };
 
 // DOM elements
-let source1Select: HTMLSelectElement | null;
-let source2Select: HTMLSelectElement | null;
-let modeToggle: HTMLInputElement | null;
-let pttKeySelect: HTMLSelectElement | null;
 let statusEl: HTMLElement | null;
 let resultEl: HTMLElement | null;
 let modelWarning: HTMLElement | null;
@@ -94,7 +85,6 @@ let pttIndicator: HTMLElement | null;
 let isCapturing = false;
 let inSpeechSegment = false;
 let transcribeQueueDepth = 0;
-let allDevices: AudioDevice[] = [];
 let transcriptionMode: TranscriptionMode = "push_to_talk";
 let pttKey: KeyCode = "right_alt";
 let isPttActive = false;
@@ -114,91 +104,6 @@ let miniWaveformRenderer: MiniWaveformRenderer | null = null;
 
 // CUDA indicator
 let cudaIndicator: HTMLElement | null = null;
-
-async function loadDevices(currentSource1?: string | null, currentSource2?: string | null) {
-  try {
-    allDevices = await invoke<AudioDevice[]>("list_all_sources");
-
-    // Populate both source dropdowns
-    populateSourceDropdown(source1Select, true);  // Default: select first device
-    populateSourceDropdown(source2Select, false); // Default: select "None"
-
-    // If the service already has sources configured, select those instead
-    if (currentSource1 && source1Select) {
-      const exists = allDevices.some(d => d.id === currentSource1);
-      if (exists) {
-        source1Select.value = currentSource1;
-      }
-    }
-    if (currentSource2 && source2Select) {
-      const exists = allDevices.some(d => d.id === currentSource2);
-      if (exists) {
-        source2Select.value = currentSource2;
-      }
-    }
-
-    // Don't auto-call onSourceChange -- the service may already be capturing.
-    // Sources are only changed when the user explicitly changes a dropdown.
-  } catch (error) {
-    console.error("Failed to load devices:", error);
-    if (source1Select) {
-      source1Select.innerHTML = `<option value="">Error loading devices</option>`;
-    }
-    if (source2Select) {
-      source2Select.innerHTML = `<option value="">Error loading devices</option>`;
-    }
-    setStatus(`Error: ${error}`, "error");
-  }
-}
-
-function populateSourceDropdown(select: HTMLSelectElement | null, selectFirstDevice: boolean) {
-  if (!select) return;
-
-  select.innerHTML = "";
-
-  // Add "None" option
-  const noneOption = document.createElement("option");
-  noneOption.value = "";
-  noneOption.textContent = "None";
-  select.appendChild(noneOption);
-
-  // Add all devices
-  allDevices.forEach((device) => {
-    const option = document.createElement("option");
-    option.value = device.id;
-    option.textContent = device.name;
-    select.appendChild(option);
-  });
-
-  // Select first device for source1, "None" for source2
-  if (selectFirstDevice && allDevices.length > 0) {
-    select.value = allDevices[0].id;
-  } else {
-    select.value = "";
-  }
-}
-
-function getSelectedSources(): { source1Id: string | null; source2Id: string | null } {
-  const source1Id = source1Select?.value || null;
-  const source2Id = source2Select?.value || null;
-  return {
-    source1Id: source1Id || null,
-    source2Id: source2Id || null,
-  };
-}
-
-// Handle source selection changes - configures capture automatically
-async function onSourceChange() {
-  const { source1Id, source2Id } = getSelectedSources();
-
-  try {
-    // Set sources - capture starts/stops automatically based on configuration
-    await invoke("set_sources", { source1Id, source2Id });
-  } catch (error) {
-    console.error("Error configuring sources:", error);
-    setStatus(`Error: ${error}`, "error");
-  }
-}
 
 async function checkModelStatus() {
   try {
@@ -494,17 +399,6 @@ async function loadPttStatus() {
     isPttActive = status.is_active;
     
     console.log(`PTT status: mode=${transcriptionMode}, key=${pttKey}`);
-    
-    // Update UI
-    if (modeToggle) {
-      modeToggle.checked = status.mode === "push_to_talk";
-    }
-    
-    if (pttKeySelect) {
-      pttKeySelect.value = status.key;
-      pttKeySelect.disabled = status.mode !== "push_to_talk";
-    }
-    
     updatePttIndicator();
     
     if (status.error) {
@@ -529,62 +423,6 @@ function updatePttIndicator() {
       pttIndicator.classList.add("hidden");
       pttIndicator.classList.remove("active");
     }
-  }
-}
-
-async function onModeToggleChange() {
-  if (!modeToggle) return;
-  
-  const newMode: TranscriptionMode = modeToggle.checked ? "push_to_talk" : "automatic";
-  
-  try {
-    await invoke("set_transcription_mode", { mode: newMode });
-    transcriptionMode = newMode;
-    
-    // Update key selector state
-    if (pttKeySelect) {
-      pttKeySelect.disabled = newMode !== "push_to_talk";
-    }
-    
-    updatePttIndicator();
-    updateStatusDisplay();
-    
-    console.log(`Transcription mode set to: ${newMode}`);
-  } catch (error) {
-    console.error("Set transcription mode error:", error);
-    setStatus(`Error: ${error}`, "error");
-    modeToggle.checked = transcriptionMode === "push_to_talk";
-  }
-}
-
-async function onPttKeyChange() {
-  if (!pttKeySelect) return;
-  
-  const newKey = pttKeySelect.value as KeyCode;
-  
-  try {
-    await invoke("set_ptt_key", { key: newKey });
-    pttKey = newKey;
-    updatePttIndicator();
-    updateStatusDisplay();
-    console.log(`PTT key set to: ${KEY_CODE_NAMES[newKey]}`);
-  } catch (error) {
-    console.error("Set PTT key error:", error);
-    setStatus(`Error: ${error}`, "error");
-    pttKeySelect.value = pttKey;
-  }
-}
-
-function populatePttKeySelect() {
-  if (!pttKeySelect) return;
-  
-  pttKeySelect.innerHTML = "";
-  
-  for (const [value, name] of Object.entries(KEY_CODE_NAMES)) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = name;
-    pttKeySelect.appendChild(option);
   }
 }
 
@@ -687,10 +525,6 @@ window.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keyup", suppressKeyHandler);
 
   // Get DOM elements
-  source1Select = document.querySelector("#source1-select");
-  source2Select = document.querySelector("#source2-select");
-  modeToggle = document.querySelector("#mode-toggle");
-  pttKeySelect = document.querySelector("#ptt-key-select");
   statusEl = document.querySelector("#status");
   resultEl = document.querySelector("#transcription-result");
   modelWarning = document.querySelector("#model-warning");
@@ -722,10 +556,6 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   // Set up event handlers
-  source1Select?.addEventListener("change", onSourceChange);
-  source2Select?.addEventListener("change", onSourceChange);
-  modeToggle?.addEventListener("change", onModeToggleChange);
-  pttKeySelect?.addEventListener("change", onPttKeyChange);
   downloadModelBtn?.addEventListener("click", downloadModel);
   closeBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
@@ -757,9 +587,6 @@ async function initializeApp() {
   // Set initial status
   setStatus("Initializing...");
   
-  // Populate PTT key dropdown
-  populatePttKeySelect();
-  
   // Set up event listeners (must be done before connect_events so we
   // catch the synthetic CaptureStateChanged sent on subscribe)
   await setupEventListeners();
@@ -781,8 +608,6 @@ async function initializeApp() {
   
   // Fetch current service status to sync UI with existing state.
   // The service may already be capturing if started independently.
-  let currentSource1: string | null = null;
-  let currentSource2: string | null = null;
   try {
     const status = await invoke<CaptureStatus>("get_status");
     startupLog(`get_status done (+${elapsed()})`);
@@ -792,8 +617,6 @@ async function initializeApp() {
     inSpeechSegment = status.in_speech;
     transcribeQueueDepth = status.queue_depth;
     transcriptionMode = status.transcription_mode;
-    currentSource1 = status.source1_id;
-    currentSource2 = status.source2_id;
     
     if (status.error) {
       setStatus(`Error: ${status.error}`, "error");
@@ -801,10 +624,6 @@ async function initializeApp() {
   } catch (error) {
     startupLog(`get_status FAILED (+${elapsed()}): ${error}`);
   }
-  
-  // Load devices and set dropdowns to match current service configuration
-  await loadDevices(currentSource1, currentSource2);
-  startupLog(`loadDevices done (+${elapsed()})`);
 
   checkModelStatus();
   checkCudaStatus();

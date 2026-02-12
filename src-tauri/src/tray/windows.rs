@@ -19,6 +19,13 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Create menu items
     let show_item = MenuItem::with_id(app, menu_ids::SHOW, menu_labels::SHOW, true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(
+        app,
+        menu_ids::SETTINGS,
+        menu_labels::SETTINGS,
+        true,
+        None::<&str>,
+    )?;
     let about_item =
         MenuItem::with_id(app, menu_ids::ABOUT, menu_labels::ABOUT, true, None::<&str>)?;
     let exit_item = MenuItem::with_id(app, menu_ids::EXIT, menu_labels::EXIT, true, None::<&str>)?;
@@ -28,6 +35,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         app,
         &[
             &show_item,
+            &settings_item,
             &about_item,
             &PredefinedMenuItem::separator(app)?,
             &exit_item,
@@ -57,6 +65,9 @@ fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent) {
     match event.id.as_ref() {
         id if id == menu_ids::SHOW => {
             show_main_window(app);
+        }
+        id if id == menu_ids::SETTINGS => {
+            show_config_window(app);
         }
         id if id == menu_ids::ABOUT => {
             show_about_window(app);
@@ -126,6 +137,29 @@ fn show_about_window(app: &tauri::AppHandle) {
     let _ = tauri::WebviewWindowBuilder::new(app, "about", WebviewUrl::App("about.html".into()))
         .title("About FlowSTT")
         .inner_size(400.0, 280.0)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .skip_taskbar(true)
+        .center()
+        .build();
+}
+
+/// Show the configuration window.
+fn show_config_window(app: &tauri::AppHandle) {
+    // Check if already open
+    if let Some(window) = app.get_webview_window("config") {
+        show_and_focus_window(&window);
+        return;
+    }
+
+    // Create config window
+    let _ = tauri::WebviewWindowBuilder::new(app, "config", WebviewUrl::App("config.html".into()))
+        .title("FlowSTT Settings")
+        .inner_size(400.0, 320.0)
         .resizable(false)
         .maximizable(false)
         .minimizable(false)
