@@ -36,11 +36,17 @@ mod vk {
     pub const SHIFT: u16 = 0x10; // VK_SHIFT
 
     // Specific modifier keys (for reference, but Raw Input uses generic + E0 flag)
+    #[allow(dead_code)]
     pub const RIGHT_ALT: u16 = 0xA5; // VK_RMENU
+    #[allow(dead_code)]
     pub const LEFT_ALT: u16 = 0xA4; // VK_LMENU
+    #[allow(dead_code)]
     pub const RIGHT_CONTROL: u16 = 0xA3; // VK_RCONTROL
+    #[allow(dead_code)]
     pub const LEFT_CONTROL: u16 = 0xA2; // VK_LCONTROL
+    #[allow(dead_code)]
     pub const RIGHT_SHIFT: u16 = 0xA1; // VK_RSHIFT
+    #[allow(dead_code)]
     pub const LEFT_SHIFT: u16 = 0xA0; // VK_LSHIFT
 
     pub const CAPS_LOCK: u16 = 0x14; // VK_CAPITAL

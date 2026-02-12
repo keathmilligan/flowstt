@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use tracing::{info, warn};
 
 /// Service configuration that persists across restarts.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Current transcription mode (Automatic or PushToTalk)
     #[serde(default)]
@@ -20,15 +20,6 @@ pub struct Config {
     /// Configured push-to-talk hotkey
     #[serde(default)]
     pub ptt_key: KeyCode,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            transcription_mode: TranscriptionMode::default(),
-            ptt_key: KeyCode::default(),
-        }
-    }
 }
 
 impl Config {

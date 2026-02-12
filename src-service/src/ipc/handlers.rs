@@ -130,9 +130,7 @@ pub async fn start_capture() -> Result<(), String> {
             backend.set_aec_enabled(aec_enabled);
             backend.set_recording_mode(recording_mode);
 
-            if let Err(e) = backend.start_capture_sources(source1_id, source2_id) {
-                return Err(e);
-            }
+            backend.start_capture_sources(source1_id, source2_id)?;
         } else {
             return Err("Audio backend not available".to_string());
         }
@@ -141,9 +139,7 @@ pub async fn start_capture() -> Result<(), String> {
         if !is_audio_loop_active() {
             let queue = get_transcription_queue();
             let transcribe_state = get_transcribe_state();
-            if let Err(e) = start_audio_loop(queue, transcribe_state) {
-                return Err(e);
-            }
+            start_audio_loop(queue, transcribe_state)?;
         }
 
         // Update state

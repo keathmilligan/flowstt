@@ -34,6 +34,7 @@ pub trait HotkeyBackend: Send {
     fn try_recv(&self) -> Option<HotkeyEvent>;
 
     /// Check if the backend is currently running.
+    #[allow(dead_code)]
     fn is_running(&self) -> bool;
 
     /// Check if the platform supports global hotkeys.

@@ -38,10 +38,11 @@ pub enum TranscriptionMode {
 }
 
 /// Platform-independent key codes for push-to-talk hotkey configuration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KeyCode {
     /// Right Alt/Option key (default on macOS)
+    #[default]
     RightAlt,
     /// Left Alt/Option key
     LeftAlt,
@@ -64,12 +65,6 @@ pub enum KeyCode {
     F18,
     F19,
     F20,
-}
-
-impl Default for KeyCode {
-    fn default() -> Self {
-        KeyCode::RightAlt
-    }
 }
 
 impl KeyCode {
@@ -96,7 +91,7 @@ impl KeyCode {
 }
 
 /// Push-to-talk status information.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct PttStatus {
     /// Current transcription mode
     pub mode: TranscriptionMode,
@@ -109,18 +104,6 @@ pub struct PttStatus {
     /// Error message if PTT is unavailable (e.g., missing permissions)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-}
-
-impl Default for PttStatus {
-    fn default() -> Self {
-        Self {
-            mode: TranscriptionMode::default(),
-            key: KeyCode::default(),
-            is_active: false,
-            available: false,
-            error: None,
-        }
-    }
 }
 
 /// Information about an audio device.

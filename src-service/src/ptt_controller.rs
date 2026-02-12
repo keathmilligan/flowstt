@@ -37,6 +37,7 @@ fn get_ptt_thread_running() -> Arc<AtomicBool> {
 }
 
 /// Check if PTT controller thread is running
+#[allow(dead_code)]
 pub fn is_ptt_controller_running() -> bool {
     get_ptt_thread_running().load(Ordering::SeqCst)
 }
@@ -247,9 +248,7 @@ fn start_ptt_capture() -> Result<(), String> {
         backend.set_aec_enabled(aec_enabled);
         backend.set_recording_mode(recording_mode);
 
-        if let Err(e) = backend.start_capture_sources(source1_id, source2_id) {
-            return Err(e);
-        }
+        backend.start_capture_sources(source1_id, source2_id)?;
     } else {
         return Err("Audio backend not available".to_string());
     }
@@ -416,6 +415,7 @@ impl VisualizationCallback for PttVisualizationBroadcaster {
 }
 
 /// Check if PTT is currently active (key held)
+#[allow(dead_code)]
 pub fn is_ptt_active() -> bool {
     get_ptt_active().load(Ordering::SeqCst)
 }
