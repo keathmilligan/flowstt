@@ -1,3 +1,5 @@
+@import './theme.css';
+
 * {
     margin: 0;
     padding: 0;
@@ -23,8 +25,8 @@ body {
     height: 100%;
     border-radius: 10px;
     overflow: hidden;
-    background: linear-gradient(145deg, #0d1118 0%, #141a24 50%, #1e2433 100%);
-    border: 0.5px solid rgba(128, 128, 128, 0.4);
+    background: linear-gradient(145deg, var(--bg-gradient-start) 0%, var(--bg-gradient-mid) 50%, var(--bg-gradient-end) 100%);
+    border: 0.5px solid var(--window-border);
     display: flex;
     flex-direction: column;
 }
@@ -40,7 +42,7 @@ body {
 .config-title {
     font-size: 0.85rem;
     font-weight: 600;
-    color: #9ca3af;
+    color: var(--config-title-text);
     letter-spacing: 0.5px;
 }
 
@@ -54,7 +56,7 @@ body {
     padding: 0;
     border: none;
     background: transparent;
-    color: #4a5568;
+    color: var(--header-btn-color);
     cursor: pointer;
     border-radius: 6px;
     display: flex;
@@ -68,11 +70,11 @@ body {
 }
 
 .close-btn:hover {
-    color: #8aa;
+    color: var(--header-btn-hover);
 }
 
 .close-btn:active {
-    color: #6a7a8a;
+    color: var(--header-btn-active);
 }
 
 .config-content {
@@ -93,7 +95,7 @@ body {
 .config-field label {
     font-size: 0.65rem;
     font-weight: 500;
-    color: #666;
+    color: var(--config-label-text);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-left: 2px;
@@ -105,9 +107,9 @@ select {
     padding: 0.45em 0.6em;
     font-size: 0.85em;
     border-radius: 4px;
-    border: 1px solid #3a4555;
-    background-color: #252d3a !important;
-    color: #f6f6f6 !important;
+    border: 1px solid var(--border-default);
+    background-color: var(--config-select-bg) !important;
+    color: var(--config-select-text) !important;
     width: 100%;
     cursor: pointer;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
@@ -118,8 +120,8 @@ select {
 }
 
 select option {
-    background-color: #252d3a !important;
-    color: #f6f6f6 !important;
+    background-color: var(--config-select-bg) !important;
+    color: var(--config-select-text) !important;
 }
 
 /* === Hotkey Management === */
@@ -139,14 +141,14 @@ select option {
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    background: #252d3a;
-    border: 1px solid #3a4555;
+    background: var(--surface-input);
+    border: 1px solid var(--border-default);
     border-radius: 4px;
     font-size: 0.85em;
 }
 
 .hotkey-label {
-    color: #f6f6f6;
+    color: var(--text-primary);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -160,7 +162,7 @@ select option {
     padding: 0;
     border: none;
     background: transparent;
-    color: #666;
+    color: var(--text-dim);
     cursor: pointer;
     border-radius: 4px;
     display: flex;
@@ -175,12 +177,12 @@ select option {
 }
 
 .hotkey-remove-btn:hover {
-    color: #e55;
-    background: rgba(255, 80, 80, 0.1);
+    color: var(--hotkey-remove-hover);
+    background: var(--hotkey-remove-hover-bg);
 }
 
 .hotkey-empty {
-    color: #555;
+    color: var(--hotkey-empty-text);
     font-size: 0.8em;
     font-style: italic;
     padding: 6px 2px;
@@ -190,19 +192,19 @@ select option {
     display: flex;
     align-items: center;
     padding: 8px 12px;
-    background: #1a2233;
-    border: 1px solid #4a7aaa;
+    background: var(--surface-recorder);
+    border: 1px solid var(--border-recorder);
     border-radius: 4px;
     animation: recorder-pulse 1.5s ease-in-out infinite;
 }
 
 @keyframes recorder-pulse {
-    0%, 100% { border-color: #4a7aaa; }
-    50% { border-color: #6a9acc; }
+    0%, 100% { border-color: var(--border-recorder); }
+    50% { border-color: var(--border-recorder-pulse); }
 }
 
 .recorder-status {
-    color: #8ac;
+    color: var(--recorder-status-text);
     font-size: 0.85em;
     font-weight: 500;
 }
@@ -211,26 +213,26 @@ select option {
     padding: 6px 12px;
     font-size: 0.8em;
     border-radius: 4px;
-    border: 1px solid #3a4555;
-    background: #252d3a;
-    color: #9ca3af;
+    border: 1px solid var(--border-default);
+    background: var(--surface-input);
+    color: var(--config-add-btn-text);
     cursor: pointer;
     transition: color 0.15s, border-color 0.15s, background 0.15s;
     text-align: center;
 }
 
 .add-hotkey-btn:hover {
-    color: #d0d0d0;
-    border-color: #5a6a7a;
-    background: #2a3444;
+    color: var(--config-add-btn-text-hover);
+    border-color: var(--border-hover);
+    background: var(--surface-input-hover);
 }
 
 .add-hotkey-btn:active {
-    background: #1e2a38;
+    background: var(--surface-input-active);
 }
 
 .hotkey-warning {
-    color: #d4a04a;
+    color: var(--hotkey-warning-text);
     font-size: 0.75em;
     padding: 4px 2px;
     line-height: 1.3;

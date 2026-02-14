@@ -8,4 +8,5 @@ pub mod ipc;
 pub mod security;
 pub mod types;
 
+pub use config::ThemeMode;
 pub use types::*;

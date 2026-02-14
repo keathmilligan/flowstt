@@ -12,6 +12,21 @@ use std::path::PathBuf;
 
 use crate::types::{HotkeyCombination, KeyCode, TranscriptionMode};
 
+/// Theme mode for the application UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    Auto,
+    Light,
+    Dark,
+}
+
+impl Default for ThemeMode {
+    fn default() -> Self {
+        ThemeMode::Auto
+    }
+}
+
 /// Service configuration that persists across restarts.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -27,6 +42,9 @@ pub struct Config {
     /// Delay in milliseconds between clipboard write and paste simulation
     #[serde(default = "default_auto_paste_delay_ms")]
     pub auto_paste_delay_ms: u32,
+    /// UI theme mode: auto (follow OS), light, or dark
+    #[serde(default)]
+    pub theme_mode: ThemeMode,
 }
 
 fn default_auto_paste_enabled() -> bool {
@@ -50,6 +68,8 @@ struct LegacyConfig {
     auto_paste_enabled: Option<bool>,
     /// Auto-paste delay in ms (may be absent in old configs)
     auto_paste_delay_ms: Option<u32>,
+    /// UI theme mode (may be absent in old configs)
+    theme_mode: Option<ThemeMode>,
 }
 
 impl Config {
@@ -115,6 +135,7 @@ impl Config {
             ptt_hotkeys: vec![HotkeyCombination::single(KeyCode::default())],
             auto_paste_enabled: true,
             auto_paste_delay_ms: 50,
+            theme_mode: ThemeMode::default(),
         }
     }
 
@@ -140,6 +161,7 @@ impl Config {
             ptt_hotkeys,
             auto_paste_enabled: legacy.auto_paste_enabled.unwrap_or(true),
             auto_paste_delay_ms: legacy.auto_paste_delay_ms.unwrap_or(50),
+            theme_mode: legacy.theme_mode.unwrap_or_default(),
         }
     }
 }
@@ -164,6 +186,7 @@ mod tests {
                 HotkeyCombination::single(KeyCode::F13),
                 HotkeyCombination::new(vec![KeyCode::LeftControl, KeyCode::LeftAlt]),
             ],
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&config).unwrap();

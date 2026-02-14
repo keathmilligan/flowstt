@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
+import { initTheme, getResolvedTheme, onThemeChange } from "./theme";
 
 const WEBSITE_URL = "https://github.com/keathmilligan/flowstt";
 const GITHUB_URL = "https://github.com/keathmilligan/flowstt";
@@ -13,6 +14,9 @@ function openExternal(url: string) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+    // Initialize theme before first paint
+    await initTheme();
+
     // Disable default context menu
     document.addEventListener("contextmenu", (e) => {
         e.preventDefault();
@@ -38,6 +42,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     } catch (e) {
         console.error("Failed to get version:", e);
+    }
+
+    // Swap logo image based on theme
+    const aboutLogo = document.querySelector<HTMLImageElement>(".about-logo");
+    if (aboutLogo) {
+        const updateLogo = (theme: string) => {
+            aboutLogo.src = theme === "light"
+                ? "/images/flowstt-portrait-light.svg"
+                : "/images/flowstt-portrait.svg";
+        };
+        updateLogo(getResolvedTheme());
+        onThemeChange(updateLogo);
     }
 
     // Close button - use destroy() like main window does

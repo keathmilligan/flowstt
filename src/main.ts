@@ -4,6 +4,7 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { MiniWaveformRenderer, VisualizationPayload } from "./renderers";
+import { initTheme, getResolvedTheme, onThemeChange } from "./theme";
 
 // Startup timing - marks the moment the JS module is first evaluated
 const JS_MODULE_LOAD_TIME = performance.now();
@@ -557,6 +558,18 @@ window.addEventListener("DOMContentLoaded", () => {
   closeBtn = document.querySelector("#close-btn");
   cudaIndicator = document.querySelector("#cuda-indicator");
 
+  // Swap logo image based on theme
+  const appLogo = document.querySelector<HTMLImageElement>(".app-logo");
+  if (appLogo) {
+    const updateLogo = (theme: string) => {
+      appLogo.src = theme === "light"
+        ? "/src/assets/flowstt-landscape-light.svg"
+        : "/src/assets/flowstt-landscape.svg";
+    };
+    updateLogo(getResolvedTheme());
+    onThemeChange(updateLogo);
+  }
+
   // Initialize mini waveform renderer
   if (miniWaveformCanvas) {
     miniWaveformRenderer = new MiniWaveformRenderer(miniWaveformCanvas, 64);
@@ -604,6 +617,10 @@ async function initializeApp() {
   const elapsed = () => `${(performance.now() - t0).toFixed(0)}ms`;
 
   startupLog(`initializeApp started at ${performance.now().toFixed(0)}ms`);
+
+  // Initialize theme before first paint
+  await initTheme();
+  startupLog(`initTheme done (+${elapsed()})`);
 
   // Set up event listeners (must be done before connect_events so we
   // catch the synthetic CaptureStateChanged sent on subscribe)

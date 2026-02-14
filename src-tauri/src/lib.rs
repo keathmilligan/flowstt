@@ -6,13 +6,14 @@
 mod ipc_client;
 mod tray;
 
+use flowstt_common::config::{Config, ThemeMode};
 use flowstt_common::ipc::{Request, Response};
 use flowstt_common::{AudioDevice, HotkeyCombination, RecordingMode, TranscriptionMode};
 use ipc_client::{IpcClient, SharedIpcClient};
 use std::env;
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 
 /// Detect if running on Wayland and set workaround env vars (Linux-specific)
@@ -313,6 +314,27 @@ async fn delete_history_entry(id: String, state: State<'_, AppState>) -> Result<
     }
 }
 
+/// Get the current theme mode from the config file.
+#[tauri::command]
+fn get_theme_mode() -> Result<ThemeMode, String> {
+    let config = Config::load();
+    Ok(config.theme_mode)
+}
+
+/// Set the theme mode and persist to the config file.
+/// Emits a "theme-changed" event to all windows so they can update.
+#[tauri::command]
+fn set_theme_mode(mode: ThemeMode, app_handle: AppHandle) -> Result<(), String> {
+    let mut config = Config::load();
+    config.theme_mode = mode.clone();
+    config.save().map_err(|e| format!("Failed to save config: {}", e))?;
+    // Emit event to all windows
+    app_handle
+        .emit("theme-changed", &mode)
+        .map_err(|e| format!("Failed to emit theme event: {}", e))?;
+    Ok(())
+}
+
 /// Log a startup diagnostic message from the frontend to stderr.
 /// This ensures all startup timing is visible in a single stream (the terminal).
 #[tauri::command]
@@ -469,6 +491,8 @@ pub fn run() {
             get_history,
             delete_history_entry,
             connect_events,
+            get_theme_mode,
+            set_theme_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { initTheme, setThemeMode, getThemeMode, ThemeMode } from "./theme";
 
 interface AudioDevice {
   id: string;
@@ -146,6 +147,7 @@ function combinationsEqual(a: HotkeyCombination, b: HotkeyCombination): boolean 
 }
 
 // DOM elements
+let themeSelect: HTMLSelectElement;
 let source1Select: HTMLSelectElement;
 let source2Select: HTMLSelectElement;
 let hotkeyListEl: HTMLDivElement;
@@ -412,12 +414,16 @@ async function onSourceChange() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  // Initialize theme before first paint
+  await initTheme();
+
   // Disable default context menu
   document.addEventListener("contextmenu", (e) => {
     e.preventDefault();
   });
 
   // Get DOM elements
+  themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
   source1Select = document.getElementById("source1-select") as HTMLSelectElement;
   source2Select = document.getElementById("source2-select") as HTMLSelectElement;
   hotkeyListEl = document.getElementById("hotkey-list") as HTMLDivElement;
@@ -441,6 +447,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   source1Select.addEventListener("change", onSourceChange);
   source2Select.addEventListener("change", onSourceChange);
   addHotkeyBtn.addEventListener("click", startRecording);
+
+  // Theme selector: pre-select current mode and wire change handler
+  themeSelect.value = getThemeMode();
+  themeSelect.addEventListener("change", async () => {
+    const mode = themeSelect.value as ThemeMode;
+    await setThemeMode(mode);
+  });
 
   // Hotkey recorder key handlers (always on document, gated by isRecording)
   document.addEventListener("keydown", (e) => {

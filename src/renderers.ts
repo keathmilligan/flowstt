@@ -373,13 +373,26 @@ export class SpectrogramRenderer {
   private fillBackground(): void {
     if (!this.imageData) return;
     const data = this.imageData.data;
-    // Dark blue-gray background color (matches --waveform-bg: #0a0f1a)
+    // Read background color from CSS custom property
+    const bgHex = getComputedStyle(document.documentElement)
+      .getPropertyValue("--waveform-bg")
+      .trim() || "#0a0f1a";
+    const rgb = this.parseHexColor(bgHex);
     for (let i = 0; i < data.length; i += 4) {
-      data[i] = 10;     // R
-      data[i + 1] = 15;  // G
-      data[i + 2] = 26;  // B
+      data[i] = rgb.r;
+      data[i + 1] = rgb.g;
+      data[i + 2] = rgb.b;
       data[i + 3] = 255; // A
     }
+  }
+
+  private parseHexColor(hex: string): { r: number; g: number; b: number } {
+    const h = hex.replace("#", "");
+    return {
+      r: parseInt(h.substring(0, 2), 16) || 0,
+      g: parseInt(h.substring(2, 4), 16) || 0,
+      b: parseInt(h.substring(4, 6), 16) || 0,
+    };
   }
 
   // Push a pre-computed spectrogram column (RGB triplets from backend)
@@ -843,15 +856,26 @@ export class SpeechActivityRenderer {
     const height = this.canvas.height / dpr;
     const area = this.getDrawableArea();
 
+    // Read all theme colors from CSS custom properties
+    const rootStyle = getComputedStyle(document.documentElement);
+    const bgColor = rootStyle.getPropertyValue("--waveform-bg").trim() || "#1e293b";
+    const thresholdLineColor = rootStyle.getPropertyValue("--threshold-line").trim() || "rgba(255, 255, 255, 0.15)";
+    const speechConfirmedColor = rootStyle.getPropertyValue("--speech-confirmed").trim() || "rgba(34, 197, 94, 0.5)";
+    const speechLookbackColor = rootStyle.getPropertyValue("--speech-lookback").trim() || "rgba(59, 130, 246, 0.7)";
+    const speechWordBreakColor = rootStyle.getPropertyValue("--speech-word-break").trim() || "rgba(249, 115, 22, 0.85)";
+    const metricAmplitudeColor = rootStyle.getPropertyValue("--metric-amplitude").trim() || "rgba(245, 158, 11, 0.75)";
+    const metricZcrColor = rootStyle.getPropertyValue("--metric-zcr").trim() || "rgba(6, 182, 212, 0.75)";
+    const metricCentroidColor = rootStyle.getPropertyValue("--metric-centroid").trim() || "rgba(217, 70, 239, 0.75)";
+    const markerVoicedColor = rootStyle.getPropertyValue("--marker-voiced-pending").trim() || "rgba(34, 197, 94, 0.7)";
+    const markerWhisperColor = rootStyle.getPropertyValue("--marker-whisper-pending").trim() || "rgba(59, 130, 246, 0.7)";
+    const markerTransientColor = rootStyle.getPropertyValue("--marker-transient").trim() || "rgba(239, 68, 68, 0.7)";
+
     // Clear canvas
-    const bgColor = getComputedStyle(document.documentElement)
-      .getPropertyValue("--waveform-bg")
-      .trim() || "#1e293b";
     this.ctx.fillStyle = bgColor;
     this.ctx.fillRect(0, 0, width, height);
 
     // Draw grid first (underneath everything)
-    this.drawGrid(width, height);
+    this.drawGrid(width, height, thresholdLineColor);
 
     // Get ordered samples
     const amplitudes = this.getSamplesInOrder(this.amplitudeBuffer);
@@ -868,32 +892,34 @@ export class SpeechActivityRenderer {
 
     // Draw speech state bar (semi-transparent, at top)
     // Now includes lookback speech in a different color
-    this.drawSpeechBar(speaking, lookbackSpeech, area);
+    this.drawSpeechBar(speaking, lookbackSpeech, area, speechConfirmedColor, speechLookbackColor);
 
     // Draw word break bars overlaying the speech bar
     const wordBreaks = this.getSamplesInOrder(this.wordBreakBuffer);
-    this.drawWordBreakBars(wordBreaks, speaking, area);
+    this.drawWordBreakBars(wordBreaks, speaking, area, speechWordBreakColor);
 
     // Draw metric lines
     // Amplitude (gold/yellow)
-    this.drawMetricLine(amplitudes, area, "rgba(245, 158, 11, 0.75)", 1);
+    this.drawMetricLine(amplitudes, area, metricAmplitudeColor, 1);
     
     // ZCR (cyan)
-    this.drawMetricLine(zcrs, area, "rgba(6, 182, 212, 0.75)", 1);
+    this.drawMetricLine(zcrs, area, metricZcrColor, 1);
     
     // Spectral centroid (magenta)
-    this.drawMetricLine(centroids, area, "rgba(217, 70, 239, 0.75)", 1);
+    this.drawMetricLine(centroids, area, metricCentroidColor, 1);
 
     // Draw state markers
-    this.drawStateMarkers(voicedPending, area, "rgba(34, 197, 94, 0.7)"); // Green for voiced pending
-    this.drawStateMarkers(whisperPending, area, "rgba(59, 130, 246, 0.7)"); // Blue for whisper pending
-    this.drawStateMarkers(transients, area, "rgba(239, 68, 68, 0.7)"); // Red for transients
+    this.drawStateMarkers(voicedPending, area, markerVoicedColor);
+    this.drawStateMarkers(whisperPending, area, markerWhisperColor);
+    this.drawStateMarkers(transients, area, markerTransientColor);
   }
 
   private drawSpeechBar(
     speaking: Uint8Array,
     lookbackSpeech: Uint8Array,
-    area: { x: number; y: number; width: number; height: number }
+    area: { x: number; y: number; width: number; height: number },
+    confirmedColor: string,
+    lookbackColor: string
   ): void {
     if (speaking.length === 0) return;
 
@@ -901,7 +927,7 @@ export class SpeechActivityRenderer {
     const offset = this.bufferSize - speaking.length;
 
     // First pass: draw lookback speech regions (bright blue color)
-    this.ctx.fillStyle = "rgba(59, 130, 246, 0.7)"; // Bright blue for lookback
+    this.ctx.fillStyle = lookbackColor;
     let inLookback = false;
     let lookbackStartX = 0;
 
@@ -919,7 +945,7 @@ export class SpeechActivityRenderer {
     }
 
     // Second pass: draw confirmed speech regions (green color, on top of lookback)
-    this.ctx.fillStyle = "rgba(34, 197, 94, 0.5)"; // Semi-transparent green for confirmed
+    this.ctx.fillStyle = confirmedColor;
     let inSpeech = false;
     let speechStartX = 0;
 
@@ -943,7 +969,8 @@ export class SpeechActivityRenderer {
   private drawWordBreakBars(
     wordBreaks: Uint8Array,
     speaking: Uint8Array,
-    area: { x: number; y: number; width: number; height: number }
+    area: { x: number; y: number; width: number; height: number },
+    wordBreakColor: string
   ): void {
     if (wordBreaks.length === 0) return;
 
@@ -951,7 +978,7 @@ export class SpeechActivityRenderer {
     const offset = this.bufferSize - wordBreaks.length;
 
     // Draw vertical bars at word break positions (only within speech regions)
-    this.ctx.strokeStyle = "rgba(249, 115, 22, 0.85)"; // Orange (matches Tailwind orange-500)
+    this.ctx.strokeStyle = wordBreakColor;
     this.ctx.lineWidth = 2;
 
     for (let i = 0; i < wordBreaks.length; i++) {
@@ -1024,7 +1051,7 @@ export class SpeechActivityRenderer {
     }
   }
 
-  private drawGrid(width: number, height: number): void {
+  private drawGrid(width: number, height: number, thresholdColor?: string): void {
     const gridColor = getComputedStyle(document.documentElement)
       .getPropertyValue("--waveform-grid")
       .trim() || "rgba(255, 255, 255, 0.08)";
@@ -1060,7 +1087,7 @@ export class SpeechActivityRenderer {
     }
 
     // Draw threshold lines (slightly heavier than regular grid)
-    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    this.ctx.strokeStyle = thresholdColor || "rgba(255, 255, 255, 0.15)";
     this.ctx.lineWidth = 1.5;
 
     // -40dB threshold (voiced)

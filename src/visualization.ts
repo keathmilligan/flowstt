@@ -1,6 +1,7 @@
 // Visualization window entry point
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { initTheme } from "./theme";
 import {
   WaveformRenderer,
   SpectrogramRenderer,
@@ -62,6 +63,9 @@ function stopRenderers() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  // Initialize theme before first paint
+  await initTheme();
+
   // Disable default context menu
   document.addEventListener("contextmenu", (e) => {
     e.preventDefault();

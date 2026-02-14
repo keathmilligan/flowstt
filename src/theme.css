@@ -1,0 +1,304 @@
+/* FlowSTT Theme System
+ * All color tokens for dark and light themes.
+ * Each window's CSS imports this file and uses var(--token) references.
+ */
+
+/* ===== Dark Theme (matches existing appearance) ===== */
+[data-theme="dark"] {
+  /* --- Base / Background --- */
+  --bg-gradient-start: #0d1118;
+  --bg-gradient-mid: #141a24;
+  --bg-gradient-end: #1e2433;
+  --window-border: rgba(128, 128, 128, 0.4);
+
+  /* --- Text --- */
+  --text-primary: #f6f6f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --text-dim: #666;
+  --text-faint: #888;
+  --text-timestamp: #64748b;
+  --text-heading: #aaa;
+  --text-empty: #475569;
+
+  /* --- Surfaces / Panels --- */
+  --surface-panel: #0a0f1a;
+  --surface-input: #252d3a;
+  --surface-input-hover: #2a3444;
+  --surface-input-active: #1e2a38;
+  --surface-recorder: #1a2233;
+  --surface-segment: rgba(255, 255, 255, 0.03);
+  --surface-segment-hover: rgba(255, 255, 255, 0.06);
+
+  /* --- Borders --- */
+  --border-default: #3a4555;
+  --border-hover: #5a6a7a;
+  --border-recorder: #4a7aaa;
+  --border-recorder-pulse: #6a9acc;
+
+  /* --- Buttons --- */
+  --btn-primary-bg: #396cd8;
+  --btn-primary-bg-hover: #2d5ab8;
+  --btn-primary-bg-active: #244a9a;
+  --btn-primary-text: #ffffff;
+  --btn-disabled-bg: #555;
+  --btn-recording-bg: #dc3545;
+  --btn-recording-bg-hover: #c82333;
+  --btn-download-bg: #28a745;
+  --btn-download-bg-hover: #218838;
+  --btn-download-bg-active: #1e7e34;
+
+  /* --- Header Buttons --- */
+  --header-btn-color: #4a5568;
+  --header-btn-hover: #8aa;
+  --header-btn-active: #6a7a8a;
+
+  /* --- Segment Action Buttons --- */
+  --segment-btn-color: #64748b;
+  --segment-btn-hover: #94a3b8;
+  --segment-btn-hover-bg: rgba(255, 255, 255, 0.1);
+  --segment-btn-playing: #3b82f6;
+  --segment-btn-copy-success: #22c55e;
+
+  /* --- Indicators --- */
+  --indicator-inactive-bg: rgba(100, 100, 100, 0.15);
+  --indicator-inactive-border: rgba(100, 100, 100, 0.4);
+  --indicator-inactive-text: #888;
+  --indicator-dot-inactive: #666;
+
+  --indicator-active-bg: rgba(59, 130, 246, 0.15);
+  --indicator-active-border: rgba(59, 130, 246, 0.4);
+  --indicator-active-text: #3b82f6;
+  --indicator-active-dot: #3b82f6;
+
+  --cuda-active-bg: rgba(118, 185, 0, 0.15);
+  --cuda-active-border: rgba(118, 185, 0, 0.4);
+  --cuda-active-text: #76b900;
+  --cuda-active-dot: #76b900;
+
+  --cuda-inactive-bg: rgba(255, 165, 0, 0.15);
+  --cuda-inactive-border: rgba(255, 165, 0, 0.4);
+  --cuda-inactive-text: #ffa500;
+  --cuda-inactive-dot: #ffa500;
+
+  /* --- Warning / Model Download --- */
+  --warning-bg: #3d3200;
+  --warning-border: #ffc107;
+  --warning-text: #ffc107;
+
+  /* --- Status Text --- */
+  --status-loading: #396cd8;
+  --status-success: #28a745;
+  --status-error: #dc3545;
+
+  /* --- Scrollbar --- */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+
+  /* --- Mini Waveform --- */
+  --mini-waveform-hover: rgba(255, 255, 255, 0.05);
+
+  /* --- Hotkey UI --- */
+  --hotkey-remove-hover: #e55;
+  --hotkey-remove-hover-bg: rgba(255, 80, 80, 0.1);
+  --hotkey-empty-text: #555;
+  --hotkey-warning-text: #d4a04a;
+  --recorder-status-text: #8ac;
+
+  /* --- Links --- */
+  --link-color: #3b82f6;
+  --link-hover: #60a5fa;
+
+  /* --- About Window --- */
+  --about-version-text: #6b7280;
+  --about-description-text: #9ca3af;
+  --about-legal-text: #4b5563;
+
+  /* --- Visualization Window --- */
+  --viz-window-title: #8899aa;
+  --viz-panel-label: #6a7a8a;
+  --viz-legend-text: #888;
+
+  /* --- Canvas Renderers --- */
+  --waveform-bg: #0a0f1a;
+  --waveform-color: #3b82f6;
+  --waveform-glow: rgba(59, 130, 246, 0.5);
+  --waveform-line: #334155;
+  --waveform-grid: rgba(255, 255, 255, 0.06);
+  --waveform-text: rgba(255, 255, 255, 0.5);
+  --spectrogram-grid: rgba(255, 255, 255, 0.12);
+  --threshold-line: rgba(255, 255, 255, 0.15);
+
+  /* --- Speech Activity Colors --- */
+  --speech-confirmed: rgba(34, 197, 94, 0.5);
+  --speech-lookback: rgba(59, 130, 246, 0.7);
+  --speech-word-break: rgba(249, 115, 22, 0.85);
+  --metric-amplitude: rgba(245, 158, 11, 0.75);
+  --metric-zcr: rgba(6, 182, 212, 0.75);
+  --metric-centroid: rgba(217, 70, 239, 0.75);
+  --marker-voiced-pending: rgba(34, 197, 94, 0.7);
+  --marker-whisper-pending: rgba(59, 130, 246, 0.7);
+  --marker-transient: rgba(239, 68, 68, 0.7);
+
+  /* --- Transcription --- */
+  --transcription-font: Inter, Avenir, Helvetica, Arial, sans-serif;
+  --transcription-color: #b0b8c4;
+
+  /* --- Config Window --- */
+  --config-title-text: #9ca3af;
+  --config-label-text: #666;
+  --config-select-bg: #252d3a;
+  --config-select-text: #f6f6f6;
+  --config-add-btn-text: #9ca3af;
+  --config-add-btn-text-hover: #d0d0d0;
+}
+
+/* ===== Light Theme ===== */
+[data-theme="light"] {
+  /* --- Base / Background --- */
+  --bg-gradient-start: #dde0e7;
+  --bg-gradient-mid: #e8ecf0;
+  --bg-gradient-end: #f3f3f3;
+  --window-border: rgba(0, 0, 0, 0.15);
+
+  /* --- Text --- */
+  --text-primary: #1a1a2e;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --text-dim: #888;
+  --text-faint: #6b7280;
+  --text-timestamp: #6b7280;
+  --text-heading: #4b5563;
+  --text-empty: #9ca3af;
+
+  /* --- Surfaces / Panels --- */
+  --surface-panel: #ffffff;
+  --surface-input: #f3f4f6;
+  --surface-input-hover: #e5e7eb;
+  --surface-input-active: #d1d5db;
+  --surface-recorder: #eef2ff;
+  --surface-segment: rgba(0, 0, 0, 0.03);
+  --surface-segment-hover: rgba(0, 0, 0, 0.06);
+
+  /* --- Borders --- */
+  --border-default: #d1d5db;
+  --border-hover: #9ca3af;
+  --border-recorder: #6366f1;
+  --border-recorder-pulse: #818cf8;
+
+  /* --- Buttons --- */
+  --btn-primary-bg: #2563eb;
+  --btn-primary-bg-hover: #1d4ed8;
+  --btn-primary-bg-active: #1e40af;
+  --btn-primary-text: #ffffff;
+  --btn-disabled-bg: #d1d5db;
+  --btn-recording-bg: #dc2626;
+  --btn-recording-bg-hover: #b91c1c;
+  --btn-download-bg: #16a34a;
+  --btn-download-bg-hover: #15803d;
+  --btn-download-bg-active: #166534;
+
+  /* --- Header Buttons --- */
+  --header-btn-color: #9ca3af;
+  --header-btn-hover: #4b5563;
+  --header-btn-active: #374151;
+
+  /* --- Segment Action Buttons --- */
+  --segment-btn-color: #9ca3af;
+  --segment-btn-hover: #4b5563;
+  --segment-btn-hover-bg: rgba(0, 0, 0, 0.08);
+  --segment-btn-playing: #2563eb;
+  --segment-btn-copy-success: #16a34a;
+
+  /* --- Indicators --- */
+  --indicator-inactive-bg: rgba(0, 0, 0, 0.05);
+  --indicator-inactive-border: rgba(0, 0, 0, 0.15);
+  --indicator-inactive-text: #9ca3af;
+  --indicator-dot-inactive: #d1d5db;
+
+  --indicator-active-bg: rgba(37, 99, 235, 0.1);
+  --indicator-active-border: rgba(37, 99, 235, 0.3);
+  --indicator-active-text: #2563eb;
+  --indicator-active-dot: #2563eb;
+
+  --cuda-active-bg: rgba(22, 163, 74, 0.1);
+  --cuda-active-border: rgba(22, 163, 74, 0.3);
+  --cuda-active-text: #16a34a;
+  --cuda-active-dot: #16a34a;
+
+  --cuda-inactive-bg: rgba(234, 179, 8, 0.1);
+  --cuda-inactive-border: rgba(234, 179, 8, 0.3);
+  --cuda-inactive-text: #ca8a04;
+  --cuda-inactive-dot: #ca8a04;
+
+  /* --- Warning / Model Download --- */
+  --warning-bg: #fefce8;
+  --warning-border: #ca8a04;
+  --warning-text: #854d0e;
+
+  /* --- Status Text --- */
+  --status-loading: #2563eb;
+  --status-success: #16a34a;
+  --status-error: #dc2626;
+
+  /* --- Scrollbar --- */
+  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
+
+  /* --- Mini Waveform --- */
+  --mini-waveform-hover: rgba(0, 0, 0, 0.05);
+
+  /* --- Hotkey UI --- */
+  --hotkey-remove-hover: #dc2626;
+  --hotkey-remove-hover-bg: rgba(220, 38, 38, 0.1);
+  --hotkey-empty-text: #9ca3af;
+  --hotkey-warning-text: #b45309;
+  --recorder-status-text: #4f46e5;
+
+  /* --- Links --- */
+  --link-color: #2563eb;
+  --link-hover: #1d4ed8;
+
+  /* --- About Window --- */
+  --about-version-text: #6b7280;
+  --about-description-text: #4b5563;
+  --about-legal-text: #9ca3af;
+
+  /* --- Visualization Window --- */
+  --viz-window-title: #4b5563;
+  --viz-panel-label: #6b7280;
+  --viz-legend-text: #6b7280;
+
+  /* --- Canvas Renderers --- */
+  --waveform-bg: #ffffff;
+  --waveform-color: #2563eb;
+  --waveform-glow: rgba(37, 99, 235, 0.3);
+  --waveform-line: #d1d5db;
+  --waveform-grid: rgba(0, 0, 0, 0.06);
+  --waveform-text: rgba(0, 0, 0, 0.5);
+  --spectrogram-grid: rgba(0, 0, 0, 0.12);
+  --threshold-line: rgba(0, 0, 0, 0.15);
+
+  /* --- Speech Activity Colors --- */
+  --speech-confirmed: rgba(22, 163, 74, 0.4);
+  --speech-lookback: rgba(37, 99, 235, 0.5);
+  --speech-word-break: rgba(234, 88, 12, 0.85);
+  --metric-amplitude: rgba(217, 119, 6, 0.8);
+  --metric-zcr: rgba(8, 145, 178, 0.8);
+  --metric-centroid: rgba(168, 85, 247, 0.8);
+  --marker-voiced-pending: rgba(22, 163, 74, 0.7);
+  --marker-whisper-pending: rgba(37, 99, 235, 0.7);
+  --marker-transient: rgba(220, 38, 38, 0.7);
+
+  /* --- Transcription --- */
+  --transcription-font: Inter, Avenir, Helvetica, Arial, sans-serif;
+  --transcription-color: #374151;
+
+  /* --- Config Window --- */
+  --config-title-text: #4b5563;
+  --config-label-text: #6b7280;
+  --config-select-bg: #f3f4f6;
+  --config-select-text: #1a1a2e;
+  --config-add-btn-text: #6b7280;
+  --config-add-btn-text-hover: #374151;
+}

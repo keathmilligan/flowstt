@@ -1,24 +1,18 @@
+@import './theme.css';
+
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;
 
-  color: #f6f6f6;
+  color: var(--text-primary);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
-
-  --waveform-bg: #0a0f1a;
-  --waveform-color: #3b82f6;
-  --waveform-glow: rgba(59, 130, 246, 0.5);
-  --waveform-line: #334155;
-  --waveform-grid: rgba(255, 255, 255, 0.06);
-  --waveform-text: rgba(255, 255, 255, 0.5);
-  --spectrogram-grid: rgba(255, 255, 255, 0.12);
 }
 
 html,
@@ -53,8 +47,8 @@ img {
   height: 100%;
   border-radius: 10px;
   overflow: hidden;
-  background: linear-gradient(145deg, #0d1118 0%, #141a24 50%, #1e2433 100%);
-  border: 0.5px solid rgba(128, 128, 128, 0.4);
+  background: linear-gradient(145deg, var(--bg-gradient-start) 0%, var(--bg-gradient-mid) 50%, var(--bg-gradient-end) 100%);
+  border: 0.5px solid var(--window-border);
   box-sizing: border-box;
 }
 
@@ -81,7 +75,7 @@ img {
 .window-title {
   font-size: 0.8rem;
   font-weight: 500;
-  color: #8899aa;
+  color: var(--viz-window-title);
   padding-left: 4px;
 }
 
@@ -96,7 +90,7 @@ img {
   background: transparent;
   border: none;
   border-radius: 6px;
-  color: #4a5568;
+  color: var(--header-btn-color);
   font-size: 1.25rem;
   font-weight: 300;
   line-height: 1;
@@ -109,12 +103,12 @@ img {
 }
 
 .close-btn:hover {
-  color: #8aa;
+  color: var(--header-btn-hover);
   background: transparent;
 }
 
 .close-btn:active {
-  color: #6a7a8a;
+  color: var(--header-btn-active);
   background: transparent;
 }
 
@@ -144,7 +138,7 @@ img {
 .panel-label {
   font-size: 0.7rem;
   font-weight: 500;
-  color: #6a7a8a;
+  color: var(--viz-panel-label);
   padding: 2px 4px;
   flex-shrink: 0;
 }
@@ -154,8 +148,8 @@ img {
   flex-direction: column;
   border-radius: 6px;
   overflow: hidden;
-  border: 1px solid #3a4555;
-  background-color: var(--waveform-bg);
+  border: 1px solid var(--border-default);
+  background-color: var(--surface-panel);
   flex: 1;
   min-height: 0;
 }
@@ -194,7 +188,7 @@ img {
   display: flex;
   gap: 0.75rem;
   font-size: 0.7rem;
-  color: #888;
+  color: var(--viz-legend-text);
   flex-shrink: 0;
   padding-right: 8px;
 }
