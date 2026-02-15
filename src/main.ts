@@ -151,7 +151,6 @@ async function setupEventListeners() {
     captureStateChangedUnlisten = await listen<{capturing: boolean, error: string | null}>(
       "capture-state-changed", 
       (event) => {
-        console.log("[Capture] State changed:", event.payload);
         isCapturing = event.payload.capturing;
 
         if (event.payload.error) {
@@ -405,7 +404,6 @@ async function checkCudaStatus() {
       }
     }
 
-    console.log(`CUDA status: build_enabled=${status.build_enabled}, runtime_available=${status.runtime_available}`);
   } catch (error) {
     console.error("Failed to check CUDA status:", error);
   }
