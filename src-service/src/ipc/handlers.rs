@@ -657,9 +657,12 @@ pub async fn handle_request(request: Request) -> Response {
         }
 
         Request::GetCudaStatus => {
-            // Check build-time CUDA support
+            // Check build-time GPU support
             // Windows always uses CUDA binaries (auto CPU fallback when no GPU)
             #[cfg(target_os = "windows")]
+            let build_enabled = true;
+            // macOS uses Metal acceleration via prebuilt whisper.cpp framework
+            #[cfg(target_os = "macos")]
             let build_enabled = true;
             // Linux requires cuda feature flag (CUDA toolkit at build time)
             #[cfg(all(target_os = "linux", feature = "cuda"))]

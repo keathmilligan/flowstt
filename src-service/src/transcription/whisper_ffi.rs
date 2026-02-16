@@ -256,6 +256,7 @@ static GGML_LIB: OnceLock<Option<GgmlLibrary>> = OnceLock::new();
 type GgmlBackendReg = *mut std::ffi::c_void;
 
 /// Wrapper around the loaded ggml library (for backend loading)
+#[allow(dead_code)]
 struct GgmlLibrary {
     _lib: Library,
     backend_load_all_from_path: unsafe extern "C" fn(dir_path: *const c_char),
@@ -302,6 +303,7 @@ impl GgmlLibrary {
     }
 
     /// Register a backend manually
+    #[allow(dead_code)]
     fn register_backend(&self, reg: GgmlBackendReg) {
         unsafe {
             (self.backend_register)(reg);
@@ -312,6 +314,7 @@ impl GgmlLibrary {
 /// Try to load and register the CUDA backend manually
 /// This is needed because the prebuilt ggml-cuda.dll doesn't follow the plugin convention
 #[cfg(windows)]
+#[allow(dead_code)]
 fn try_load_cuda_backend(ggml_lib: &GgmlLibrary, lib_dir: &Path) {
     let cuda_dll_path = lib_dir.join("ggml-cuda.dll");
     if !cuda_dll_path.exists() {
@@ -360,6 +363,7 @@ fn try_load_cuda_backend(ggml_lib: &GgmlLibrary, lib_dir: &Path) {
 }
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 fn try_load_cuda_backend(_ggml_lib: &GgmlLibrary, _lib_dir: &Path) {
     // On non-Windows, CUDA backend loading is handled differently
 }

@@ -390,10 +390,10 @@ fn needs_setup() -> bool {
 /// window this suspends the compositor/rendering. Sending WM_CANCELMODE
 /// to the HWND cancels this state and restores normal rendering.
 #[tauri::command]
-fn cancel_menu_mode(window: tauri::WebviewWindow) {
+fn cancel_menu_mode(_window: tauri::WebviewWindow) {
     #[cfg(target_os = "windows")]
     {
-        if let Ok(hwnd) = window.hwnd() {
+        if let Ok(hwnd) = _window.hwnd() {
             unsafe {
                     let _ = windows::Win32::UI::WindowsAndMessaging::SendMessageW(
                     windows::Win32::Foundation::HWND(hwnd.0),
@@ -661,14 +661,14 @@ pub fn run() {
             );
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|_window, _event| {
             // Handle window close - hide to tray instead of exiting
             #[cfg(windows)]
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = _event {
+                if _window.label() == "main" {
                     // Hide to tray instead of closing
                     api.prevent_close();
-                    let _ = window.hide();
+                    let _ = _window.hide();
                 }
                 // About window and other windows close normally
             }

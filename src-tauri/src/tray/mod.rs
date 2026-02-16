@@ -2,11 +2,16 @@
 //!
 //! Platform-specific implementations:
 //! - Windows: windows.rs
+//! - macOS: macos.rs
 
 #[cfg(windows)]
 pub mod windows;
 
+#[cfg(target_os = "macos")]
+pub mod macos;
+
 /// Menu item identifiers.
+#[allow(dead_code)]
 pub mod menu_ids {
     pub const SHOW: &str = "show";
     pub const SETTINGS: &str = "settings";
@@ -15,6 +20,7 @@ pub mod menu_ids {
 }
 
 /// Menu item labels.
+#[allow(dead_code)]
 pub mod menu_labels {
     pub const SHOW: &str = "Show";
     pub const SETTINGS: &str = "Settings";
@@ -26,8 +32,11 @@ pub mod menu_labels {
 #[cfg(windows)]
 pub use windows::setup_tray;
 
-/// Non-Windows platforms - no-op for now.
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub use macos::setup_tray;
+
+/// Linux tray - no-op for now.
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn setup_tray(_app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }

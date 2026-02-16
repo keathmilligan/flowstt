@@ -5,33 +5,134 @@
 
 use super::backend::{AutoModeState, HotkeyBackend, HotkeyEvent};
 use flowstt_common::{HotkeyCombination, KeyCode};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use tracing::{debug, error, info};
 
-// macOS virtual key codes
+#[allow(dead_code)]
 mod keycode {
-    pub const RIGHT_OPTION: u16 = 0x3D; // 61
-    pub const LEFT_OPTION: u16 = 0x3A; // 58
-    pub const RIGHT_CONTROL: u16 = 0x3E; // 62
-    pub const LEFT_CONTROL: u16 = 0x3B; // 59
-    pub const RIGHT_SHIFT: u16 = 0x3C; // 60
-    pub const LEFT_SHIFT: u16 = 0x38; // 56
-    pub const CAPS_LOCK: u16 = 0x39; // 57
-    pub const F13: u16 = 0x69; // 105
-    pub const F14: u16 = 0x6B; // 107
-    pub const F15: u16 = 0x71; // 113
-    pub const F16: u16 = 0x6A; // 106
-    pub const F17: u16 = 0x40; // 64
-    pub const F18: u16 = 0x4F; // 79
-    pub const F19: u16 = 0x50; // 80
-    pub const F20: u16 = 0x5A; // 90
+    pub const A: u16 = 0x00;
+    pub const S: u16 = 0x01;
+    pub const D: u16 = 0x02;
+    pub const F: u16 = 0x03;
+    pub const H: u16 = 0x04;
+    pub const G: u16 = 0x05;
+    pub const Z: u16 = 0x06;
+    pub const X: u16 = 0x07;
+    pub const C: u16 = 0x08;
+    pub const V: u16 = 0x09;
+    pub const B: u16 = 0x0B;
+    pub const Q: u16 = 0x0C;
+    pub const W: u16 = 0x0D;
+    pub const E: u16 = 0x0E;
+    pub const R: u16 = 0x0F;
+    pub const Y: u16 = 0x10;
+    pub const T: u16 = 0x11;
+    pub const DIGIT_1: u16 = 0x12;
+    pub const DIGIT_2: u16 = 0x13;
+    pub const DIGIT_3: u16 = 0x14;
+    pub const DIGIT_4: u16 = 0x15;
+    pub const DIGIT_6: u16 = 0x16;
+    pub const DIGIT_5: u16 = 0x17;
+    pub const EQUAL: u16 = 0x18;
+    pub const DIGIT_9: u16 = 0x19;
+    pub const DIGIT_7: u16 = 0x1A;
+    pub const MINUS: u16 = 0x1B;
+    pub const DIGIT_8: u16 = 0x1C;
+    pub const DIGIT_0: u16 = 0x1D;
+    pub const BRACKET_RIGHT: u16 = 0x1E;
+    pub const O: u16 = 0x1F;
+    pub const U: u16 = 0x20;
+    pub const BRACKET_LEFT: u16 = 0x21;
+    pub const I: u16 = 0x22;
+    pub const P: u16 = 0x23;
+    pub const ENTER: u16 = 0x24;
+    pub const L: u16 = 0x25;
+    pub const J: u16 = 0x26;
+    pub const QUOTE: u16 = 0x27;
+    pub const K: u16 = 0x28;
+    pub const SEMICOLON: u16 = 0x29;
+    pub const BACKSLASH: u16 = 0x2A;
+    pub const COMMA: u16 = 0x2B;
+    pub const SLASH: u16 = 0x2C;
+    pub const N: u16 = 0x2D;
+    pub const M: u16 = 0x2E;
+    pub const PERIOD: u16 = 0x2F;
+    pub const TAB: u16 = 0x30;
+    pub const SPACE: u16 = 0x31;
+    pub const BACKQUOTE: u16 = 0x32;
+    pub const BACKSPACE: u16 = 0x33;
+    pub const ESCAPE: u16 = 0x35;
+    pub const RIGHT_OPTION: u16 = 0x3D;
+    pub const LEFT_OPTION: u16 = 0x3A;
+    pub const RIGHT_CONTROL: u16 = 0x3E;
+    pub const LEFT_CONTROL: u16 = 0x3B;
+    pub const RIGHT_SHIFT: u16 = 0x3C;
+    pub const LEFT_SHIFT: u16 = 0x38;
+    pub const CAPS_LOCK: u16 = 0x39;
+    pub const LEFT_META: u16 = 0x37;
+    pub const RIGHT_META: u16 = 0x36;
+    pub const F1: u16 = 0x7A;
+    pub const F2: u16 = 0x78;
+    pub const F3: u16 = 0x63;
+    pub const F4: u16 = 0x76;
+    pub const F5: u16 = 0x60;
+    pub const F6: u16 = 0x61;
+    pub const F7: u16 = 0x62;
+    pub const F8: u16 = 0x64;
+    pub const F9: u16 = 0x65;
+    pub const F10: u16 = 0x6D;
+    pub const F11: u16 = 0x67;
+    pub const F12: u16 = 0x6F;
+    pub const F13: u16 = 0x69;
+    pub const F14: u16 = 0x6B;
+    pub const F15: u16 = 0x71;
+    pub const F16: u16 = 0x6A;
+    pub const F17: u16 = 0x40;
+    pub const F18: u16 = 0x4F;
+    pub const F19: u16 = 0x50;
+    pub const F20: u16 = 0x5A;
+    pub const F21: u16 = 0x5C;
+    pub const F22: u16 = 0x58;
+    pub const F23: u16 = 0x56;
+    pub const F24: u16 = 0x57;
+    pub const HOME: u16 = 0x73;
+    pub const PAGE_UP: u16 = 0x74;
+    pub const FORWARD_DELETE: u16 = 0x75;
+    pub const END: u16 = 0x77;
+    pub const PAGE_DOWN: u16 = 0x79;
+    pub const ARROW_LEFT: u16 = 0x7B;
+    pub const ARROW_RIGHT: u16 = 0x7C;
+    pub const ARROW_DOWN: u16 = 0x7D;
+    pub const ARROW_UP: u16 = 0x7E;
+    pub const NUM_LOCK: u16 = 0x47;
+    pub const NUMPAD_EQUAL: u16 = 0x51;
+    pub const NUMPAD_DIVIDE: u16 = 0x4B;
+    pub const NUMPAD_MULTIPLY: u16 = 0x43;
+    pub const NUMPAD_SUBTRACT: u16 = 0x4E;
+    pub const NUMPAD_ADD: u16 = 0x45;
+    pub const NUMPAD_ENTER: u16 = 0x4C;
+    pub const NUMPAD_DECIMAL: u16 = 0x41;
+    pub const NUMPAD_0: u16 = 0x52;
+    pub const NUMPAD_1: u16 = 0x53;
+    pub const NUMPAD_2: u16 = 0x54;
+    pub const NUMPAD_3: u16 = 0x55;
+    pub const NUMPAD_4: u16 = 0x56;
+    pub const NUMPAD_5: u16 = 0x57;
+    pub const NUMPAD_6: u16 = 0x58;
+    pub const NUMPAD_7: u16 = 0x59;
+    pub const NUMPAD_8: u16 = 0x5B;
+    pub const NUMPAD_9: u16 = 0x5C;
+    pub const INSERT: u16 = 0x72;
+    pub const PRINT_SCREEN: u16 = 0x6B;
+    pub const SCROLL_LOCK: u16 = 0x71;
+    pub const PAUSE: u16 = 0x71;
 }
 
-/// Convert KeyCode to macOS virtual key code.
-/// Returns 0xFFFF for keys not yet mapped on macOS.
+#[allow(dead_code)]
 fn keycode_to_macos(key: KeyCode) -> u16 {
     match key {
         KeyCode::RightAlt => keycode::RIGHT_OPTION,
@@ -41,6 +142,20 @@ fn keycode_to_macos(key: KeyCode) -> u16 {
         KeyCode::RightShift => keycode::RIGHT_SHIFT,
         KeyCode::LeftShift => keycode::LEFT_SHIFT,
         KeyCode::CapsLock => keycode::CAPS_LOCK,
+        KeyCode::LeftMeta => keycode::LEFT_META,
+        KeyCode::RightMeta => keycode::RIGHT_META,
+        KeyCode::F1 => keycode::F1,
+        KeyCode::F2 => keycode::F2,
+        KeyCode::F3 => keycode::F3,
+        KeyCode::F4 => keycode::F4,
+        KeyCode::F5 => keycode::F5,
+        KeyCode::F6 => keycode::F6,
+        KeyCode::F7 => keycode::F7,
+        KeyCode::F8 => keycode::F8,
+        KeyCode::F9 => keycode::F9,
+        KeyCode::F10 => keycode::F10,
+        KeyCode::F11 => keycode::F11,
+        KeyCode::F12 => keycode::F12,
         KeyCode::F13 => keycode::F13,
         KeyCode::F14 => keycode::F14,
         KeyCode::F15 => keycode::F15,
@@ -49,8 +164,202 @@ fn keycode_to_macos(key: KeyCode) -> u16 {
         KeyCode::F18 => keycode::F18,
         KeyCode::F19 => keycode::F19,
         KeyCode::F20 => keycode::F20,
-        // TODO: Map remaining keys when macOS backend gets full combination support
-        _ => 0xFFFF,
+        KeyCode::F21 => keycode::F21,
+        KeyCode::F22 => keycode::F22,
+        KeyCode::F23 => keycode::F23,
+        KeyCode::F24 => keycode::F24,
+        KeyCode::KeyA => keycode::A,
+        KeyCode::KeyS => keycode::S,
+        KeyCode::KeyD => keycode::D,
+        KeyCode::KeyF => keycode::F,
+        KeyCode::KeyH => keycode::H,
+        KeyCode::KeyG => keycode::G,
+        KeyCode::KeyZ => keycode::Z,
+        KeyCode::KeyX => keycode::X,
+        KeyCode::KeyC => keycode::C,
+        KeyCode::KeyV => keycode::V,
+        KeyCode::KeyB => keycode::B,
+        KeyCode::KeyQ => keycode::Q,
+        KeyCode::KeyW => keycode::W,
+        KeyCode::KeyE => keycode::E,
+        KeyCode::KeyR => keycode::R,
+        KeyCode::KeyY => keycode::Y,
+        KeyCode::KeyT => keycode::T,
+        KeyCode::KeyO => keycode::O,
+        KeyCode::KeyU => keycode::U,
+        KeyCode::KeyI => keycode::I,
+        KeyCode::KeyP => keycode::P,
+        KeyCode::KeyL => keycode::L,
+        KeyCode::KeyJ => keycode::J,
+        KeyCode::KeyK => keycode::K,
+        KeyCode::KeyN => keycode::N,
+        KeyCode::KeyM => keycode::M,
+        KeyCode::Digit1 => keycode::DIGIT_1,
+        KeyCode::Digit2 => keycode::DIGIT_2,
+        KeyCode::Digit3 => keycode::DIGIT_3,
+        KeyCode::Digit4 => keycode::DIGIT_4,
+        KeyCode::Digit5 => keycode::DIGIT_5,
+        KeyCode::Digit6 => keycode::DIGIT_6,
+        KeyCode::Digit7 => keycode::DIGIT_7,
+        KeyCode::Digit8 => keycode::DIGIT_8,
+        KeyCode::Digit9 => keycode::DIGIT_9,
+        KeyCode::Digit0 => keycode::DIGIT_0,
+        KeyCode::ArrowUp => keycode::ARROW_UP,
+        KeyCode::ArrowDown => keycode::ARROW_DOWN,
+        KeyCode::ArrowLeft => keycode::ARROW_LEFT,
+        KeyCode::ArrowRight => keycode::ARROW_RIGHT,
+        KeyCode::Home => keycode::HOME,
+        KeyCode::End => keycode::END,
+        KeyCode::PageUp => keycode::PAGE_UP,
+        KeyCode::PageDown => keycode::PAGE_DOWN,
+        KeyCode::Insert => keycode::INSERT,
+        KeyCode::Delete => keycode::FORWARD_DELETE,
+        KeyCode::Escape => keycode::ESCAPE,
+        KeyCode::Tab => keycode::TAB,
+        KeyCode::Space => keycode::SPACE,
+        KeyCode::Enter => keycode::ENTER,
+        KeyCode::Backspace => keycode::BACKSPACE,
+        KeyCode::PrintScreen => keycode::PRINT_SCREEN,
+        KeyCode::ScrollLock => keycode::SCROLL_LOCK,
+        KeyCode::Pause => keycode::PAUSE,
+        KeyCode::Minus => keycode::MINUS,
+        KeyCode::Equal => keycode::EQUAL,
+        KeyCode::BracketLeft => keycode::BRACKET_LEFT,
+        KeyCode::BracketRight => keycode::BRACKET_RIGHT,
+        KeyCode::Backslash => keycode::BACKSLASH,
+        KeyCode::Semicolon => keycode::SEMICOLON,
+        KeyCode::Quote => keycode::QUOTE,
+        KeyCode::Backquote => keycode::BACKQUOTE,
+        KeyCode::Comma => keycode::COMMA,
+        KeyCode::Period => keycode::PERIOD,
+        KeyCode::Slash => keycode::SLASH,
+        KeyCode::Numpad0 => keycode::NUMPAD_0,
+        KeyCode::Numpad1 => keycode::NUMPAD_1,
+        KeyCode::Numpad2 => keycode::NUMPAD_2,
+        KeyCode::Numpad3 => keycode::NUMPAD_3,
+        KeyCode::Numpad4 => keycode::NUMPAD_4,
+        KeyCode::Numpad5 => keycode::NUMPAD_5,
+        KeyCode::Numpad6 => keycode::NUMPAD_6,
+        KeyCode::Numpad7 => keycode::NUMPAD_7,
+        KeyCode::Numpad8 => keycode::NUMPAD_8,
+        KeyCode::Numpad9 => keycode::NUMPAD_9,
+        KeyCode::NumpadMultiply => keycode::NUMPAD_MULTIPLY,
+        KeyCode::NumpadAdd => keycode::NUMPAD_ADD,
+        KeyCode::NumpadSubtract => keycode::NUMPAD_SUBTRACT,
+        KeyCode::NumpadDecimal => keycode::NUMPAD_DECIMAL,
+        KeyCode::NumpadDivide => keycode::NUMPAD_DIVIDE,
+        KeyCode::NumLock => keycode::NUM_LOCK,
+    }
+}
+
+fn macos_to_keycode(keycode: u16) -> Option<KeyCode> {
+    match keycode {
+        keycode::RIGHT_OPTION => Some(KeyCode::RightAlt),
+        keycode::LEFT_OPTION => Some(KeyCode::LeftAlt),
+        keycode::RIGHT_CONTROL => Some(KeyCode::RightControl),
+        keycode::LEFT_CONTROL => Some(KeyCode::LeftControl),
+        keycode::RIGHT_SHIFT => Some(KeyCode::RightShift),
+        keycode::LEFT_SHIFT => Some(KeyCode::LeftShift),
+        keycode::CAPS_LOCK => Some(KeyCode::CapsLock),
+        keycode::LEFT_META => Some(KeyCode::LeftMeta),
+        keycode::RIGHT_META => Some(KeyCode::RightMeta),
+        keycode::F1 => Some(KeyCode::F1),
+        keycode::F2 => Some(KeyCode::F2),
+        keycode::F3 => Some(KeyCode::F3),
+        keycode::F4 => Some(KeyCode::F4),
+        keycode::F5 => Some(KeyCode::F5),
+        keycode::F6 => Some(KeyCode::F6),
+        keycode::F7 => Some(KeyCode::F7),
+        keycode::F8 => Some(KeyCode::F8),
+        keycode::F9 => Some(KeyCode::F9),
+        keycode::F10 => Some(KeyCode::F10),
+        keycode::F11 => Some(KeyCode::F11),
+        keycode::F12 => Some(KeyCode::F12),
+        keycode::F13 => Some(KeyCode::F13),
+        keycode::F14 => Some(KeyCode::F14),
+        keycode::F15 => Some(KeyCode::F15),
+        keycode::F16 => Some(KeyCode::F16),
+        keycode::F17 => Some(KeyCode::F17),
+        keycode::F18 => Some(KeyCode::F18),
+        keycode::F19 => Some(KeyCode::F19),
+        keycode::F20 => Some(KeyCode::F20),
+        keycode::F21 => Some(KeyCode::F21),
+        keycode::F22 => Some(KeyCode::F22),
+        keycode::F23 => Some(KeyCode::F23),
+        keycode::F24 => Some(KeyCode::F24),
+        keycode::A => Some(KeyCode::KeyA),
+        keycode::S => Some(KeyCode::KeyS),
+        keycode::D => Some(KeyCode::KeyD),
+        keycode::F => Some(KeyCode::KeyF),
+        keycode::H => Some(KeyCode::KeyH),
+        keycode::G => Some(KeyCode::KeyG),
+        keycode::Z => Some(KeyCode::KeyZ),
+        keycode::X => Some(KeyCode::KeyX),
+        keycode::C => Some(KeyCode::KeyC),
+        keycode::V => Some(KeyCode::KeyV),
+        keycode::B => Some(KeyCode::KeyB),
+        keycode::Q => Some(KeyCode::KeyQ),
+        keycode::W => Some(KeyCode::KeyW),
+        keycode::E => Some(KeyCode::KeyE),
+        keycode::R => Some(KeyCode::KeyR),
+        keycode::Y => Some(KeyCode::KeyY),
+        keycode::T => Some(KeyCode::KeyT),
+        keycode::O => Some(KeyCode::KeyO),
+        keycode::U => Some(KeyCode::KeyU),
+        keycode::I => Some(KeyCode::KeyI),
+        keycode::P => Some(KeyCode::KeyP),
+        keycode::L => Some(KeyCode::KeyL),
+        keycode::J => Some(KeyCode::KeyJ),
+        keycode::K => Some(KeyCode::KeyK),
+        keycode::N => Some(KeyCode::KeyN),
+        keycode::M => Some(KeyCode::KeyM),
+        keycode::DIGIT_1 => Some(KeyCode::Digit1),
+        keycode::DIGIT_2 => Some(KeyCode::Digit2),
+        keycode::DIGIT_3 => Some(KeyCode::Digit3),
+        keycode::DIGIT_4 => Some(KeyCode::Digit4),
+        keycode::DIGIT_5 => Some(KeyCode::Digit5),
+        keycode::DIGIT_6 => Some(KeyCode::Digit6),
+        keycode::DIGIT_7 => Some(KeyCode::Digit7),
+        keycode::DIGIT_8 => Some(KeyCode::Digit8),
+        keycode::DIGIT_9 => Some(KeyCode::Digit9),
+        keycode::DIGIT_0 => Some(KeyCode::Digit0),
+        keycode::ARROW_UP => Some(KeyCode::ArrowUp),
+        keycode::ARROW_DOWN => Some(KeyCode::ArrowDown),
+        keycode::ARROW_LEFT => Some(KeyCode::ArrowLeft),
+        keycode::ARROW_RIGHT => Some(KeyCode::ArrowRight),
+        keycode::HOME => Some(KeyCode::Home),
+        keycode::END => Some(KeyCode::End),
+        keycode::PAGE_UP => Some(KeyCode::PageUp),
+        keycode::PAGE_DOWN => Some(KeyCode::PageDown),
+        keycode::INSERT => Some(KeyCode::Insert),
+        keycode::FORWARD_DELETE => Some(KeyCode::Delete),
+        keycode::ESCAPE => Some(KeyCode::Escape),
+        keycode::TAB => Some(KeyCode::Tab),
+        keycode::SPACE => Some(KeyCode::Space),
+        keycode::ENTER => Some(KeyCode::Enter),
+        keycode::BACKSPACE => Some(KeyCode::Backspace),
+        keycode::MINUS => Some(KeyCode::Minus),
+        keycode::EQUAL => Some(KeyCode::Equal),
+        keycode::BRACKET_LEFT => Some(KeyCode::BracketLeft),
+        keycode::BRACKET_RIGHT => Some(KeyCode::BracketRight),
+        keycode::BACKSLASH => Some(KeyCode::Backslash),
+        keycode::SEMICOLON => Some(KeyCode::Semicolon),
+        keycode::QUOTE => Some(KeyCode::Quote),
+        keycode::BACKQUOTE => Some(KeyCode::Backquote),
+        keycode::COMMA => Some(KeyCode::Comma),
+        keycode::PERIOD => Some(KeyCode::Period),
+        keycode::SLASH => Some(KeyCode::Slash),
+        keycode::NUMPAD_0 => Some(KeyCode::Numpad0),
+        keycode::NUMPAD_1 => Some(KeyCode::Numpad1),
+        keycode::NUMPAD_2 => Some(KeyCode::Numpad2),
+        keycode::NUMPAD_3 => Some(KeyCode::Numpad3),
+        keycode::NUMPAD_MULTIPLY => Some(KeyCode::NumpadMultiply),
+        keycode::NUMPAD_ADD => Some(KeyCode::NumpadAdd),
+        keycode::NUMPAD_SUBTRACT => Some(KeyCode::NumpadSubtract),
+        keycode::NUMPAD_DECIMAL => Some(KeyCode::NumpadDecimal),
+        keycode::NUMPAD_DIVIDE => Some(KeyCode::NumpadDivide),
+        keycode::NUM_LOCK => Some(KeyCode::NumLock),
+        _ => None,
     }
 }
 
@@ -81,12 +390,7 @@ impl MacOSHotkeyBackend {
 
     /// Check if we have Accessibility permission
     fn check_accessibility_permission() -> bool {
-        // Use the ApplicationServices framework to check permission
-        // AXIsProcessTrustedWithOptions with prompt option
-        unsafe {
-            let trusted = macos_ffi::AXIsProcessTrusted();
-            trusted
-        }
+        unsafe { macos_ffi::AXIsProcessTrusted() }
     }
 
     /// Request accessibility permission (shows system dialog)
@@ -95,9 +399,8 @@ impl MacOSHotkeyBackend {
             // Create options dictionary with prompt key set to true
             let options = macos_ffi::CFDictionaryCreate(
                 std::ptr::null(),
-                &macos_ffi::kAXTrustedCheckOptionPrompt as *const _
-                    as *const *const std::ffi::c_void,
-                &macos_ffi::kCFBooleanTrue as *const _ as *const *const std::ffi::c_void,
+                &macos_ffi::kAXTrustedCheckOptionPrompt as *const _,
+                &macos_ffi::kCFBooleanTrue as *const _,
                 1,
                 &macos_ffi::kCFTypeDictionaryKeyCallBacks,
                 &macos_ffi::kCFTypeDictionaryValueCallBacks,
@@ -124,19 +427,12 @@ impl HotkeyBackend for MacOSHotkeyBackend {
             return Err("Hotkey backend already running".to_string());
         }
 
-        // macOS backend: for now, use the first key of the first combination
-        // (full combination support to be implemented later)
-        let ptt_key = ptt_hotkeys
-            .first()
-            .and_then(|h| h.keys.first().copied())
-            .unwrap_or_default();
+        if ptt_hotkeys.is_empty() && toggle_hotkeys.is_empty() {
+            return Err("No hotkey combinations configured".to_string());
+        }
 
-        let toggle_key = toggle_hotkeys.first().and_then(|h| h.keys.first().copied());
-
-        // Check accessibility permission, prompt if not granted
         if !Self::check_accessibility_permission() {
             info!("[Hotkey] Accessibility permission not granted, requesting...");
-            // This will show the system permission dialog
             let granted = Self::request_accessibility_permission();
             if !granted {
                 let msg = "Push-to-Talk requires Accessibility permission to detect hotkeys. Grant permission in System Settings > Privacy & Security > Accessibility, then restart FlowSTT.".to_string();
@@ -151,22 +447,20 @@ impl HotkeyBackend for MacOSHotkeyBackend {
         let running = self.running.clone();
         running.store(true, Ordering::SeqCst);
 
-        let ptt_keycode = keycode_to_macos(ptt_key);
-        let toggle_keycode = toggle_key.map(keycode_to_macos);
         let auto_mode_state = self.auto_mode_state.clone();
 
-        // Spawn the event tap thread
         let handle = thread::spawn(move || {
             info!(
-                "[Hotkey] Starting macOS event tap for PTT key {}, toggle key {:?}",
-                ptt_keycode, toggle_keycode
+                "[Hotkey] Starting macOS event tap for {} PTT hotkey(s), {} toggle hotkey(s)",
+                ptt_hotkeys.len(),
+                toggle_hotkeys.len()
             );
 
             if let Err(e) = run_event_tap(
                 running.clone(),
                 sender,
-                ptt_keycode,
-                toggle_keycode,
+                ptt_hotkeys,
+                toggle_hotkeys,
                 auto_mode_state,
             ) {
                 error!("[Hotkey] Event tap error: {}", e);
@@ -232,23 +526,22 @@ impl Drop for MacOSHotkeyBackend {
 fn run_event_tap(
     running: Arc<AtomicBool>,
     sender: Sender<HotkeyEvent>,
-    ptt_keycode: u16,
-    toggle_keycode: Option<u16>,
+    ptt_hotkeys: Vec<HotkeyCombination>,
+    toggle_hotkeys: Vec<HotkeyCombination>,
     auto_mode_state: Arc<AutoModeState>,
 ) -> Result<(), String> {
     unsafe {
-        // Create a mach port for the event tap
         let event_mask = (1 << macos_ffi::kCGEventKeyDown)
             | (1 << macos_ffi::kCGEventKeyUp)
             | (1 << macos_ffi::kCGEventFlagsChanged);
 
-        // Store context for the callback
         let context = Box::new(EventTapContext {
             sender,
-            ptt_keycode,
-            toggle_keycode,
-            ptt_key_down: AtomicBool::new(false),
-            toggle_key_down: AtomicBool::new(false),
+            ptt_hotkeys,
+            toggle_hotkeys,
+            pressed_keys: Mutex::new(HashSet::new()),
+            any_ptt_matched: AtomicBool::new(false),
+            any_toggle_matched: AtomicBool::new(false),
             auto_mode_state,
         });
         let context_ptr = Box::into_raw(context);
@@ -256,18 +549,17 @@ fn run_event_tap(
         let tap = macos_ffi::CGEventTapCreate(
             macos_ffi::kCGSessionEventTap,
             macos_ffi::kCGHeadInsertEventTap,
-            macos_ffi::kCGEventTapOptionListenOnly, // Passive mode
+            macos_ffi::kCGEventTapOptionListenOnly,
             event_mask,
             event_tap_callback,
             context_ptr as *mut std::ffi::c_void,
         );
 
         if tap.is_null() {
-            let _ = Box::from_raw(context_ptr); // Clean up
+            let _ = Box::from_raw(context_ptr);
             return Err("Failed to create event tap. Check Accessibility permissions.".to_string());
         }
 
-        // Create a run loop source
         let run_loop_source = macos_ffi::CFMachPortCreateRunLoopSource(std::ptr::null(), tap, 0);
 
         if run_loop_source.is_null() {
@@ -276,30 +568,21 @@ fn run_event_tap(
             return Err("Failed to create run loop source".to_string());
         }
 
-        // Get the current run loop and add the source
         let run_loop = macos_ffi::CFRunLoopGetCurrent();
         macos_ffi::CFRunLoopAddSource(run_loop, run_loop_source, macos_ffi::kCFRunLoopCommonModes);
 
-        // Enable the event tap
         macos_ffi::CGEventTapEnable(tap, true);
 
         debug!("[Hotkey] Event tap created and enabled");
 
-        // Run the loop until stopped
         while running.load(Ordering::SeqCst) {
-            // Run for a short interval then check if we should stop
-            let result = macos_ffi::CFRunLoopRunInMode(
-                macos_ffi::kCFRunLoopDefaultMode,
-                0.1, // 100ms timeout
-                true,
-            );
+            let result = macos_ffi::CFRunLoopRunInMode(macos_ffi::kCFRunLoopDefaultMode, 0.1, true);
 
             if result == macos_ffi::kCFRunLoopRunFinished {
                 break;
             }
         }
 
-        // Cleanup
         macos_ffi::CGEventTapEnable(tap, false);
         macos_ffi::CFRunLoopRemoveSource(
             run_loop,
@@ -316,17 +599,16 @@ fn run_event_tap(
     Ok(())
 }
 
-/// Context passed to the event tap callback
 struct EventTapContext {
     sender: Sender<HotkeyEvent>,
-    ptt_keycode: u16,
-    toggle_keycode: Option<u16>,
-    ptt_key_down: AtomicBool,
-    toggle_key_down: AtomicBool,
+    ptt_hotkeys: Vec<HotkeyCombination>,
+    toggle_hotkeys: Vec<HotkeyCombination>,
+    pressed_keys: Mutex<HashSet<KeyCode>>,
+    any_ptt_matched: AtomicBool,
+    any_toggle_matched: AtomicBool,
     auto_mode_state: Arc<AutoModeState>,
 }
 
-/// CGEventTap callback function
 extern "C" fn event_tap_callback(
     _proxy: macos_ffi::CGEventTapProxy,
     event_type: macos_ffi::CGEventType,
@@ -335,98 +617,112 @@ extern "C" fn event_tap_callback(
 ) -> macos_ffi::CGEventRef {
     let context = unsafe { &*(user_info as *const EventTapContext) };
 
-    // Handle flags changed events (for modifier keys like Option, Shift, Control)
+    let keycode = unsafe {
+        macos_ffi::CGEventGetIntegerValueField(event, macos_ffi::kCGKeyboardEventKeycode)
+    } as u16;
+
+    let flags = unsafe { macos_ffi::CGEventGetFlags(event) };
+
     if event_type == macos_ffi::kCGEventFlagsChanged {
-        let keycode = unsafe {
-            macos_ffi::CGEventGetIntegerValueField(event, macos_ffi::kCGKeyboardEventKeycode)
-        } as u16;
-
-        // Check if this is a toggle key
-        if let Some(toggle_kc) = context.toggle_keycode {
-            if keycode == toggle_kc {
-                let was_down = context.toggle_key_down.swap(true, Ordering::SeqCst);
-                if !was_down {
-                    debug!("[Hotkey] Toggle key pressed (flags changed)");
-                    let _ = context.sender.send(HotkeyEvent::TogglePressed);
-                }
-                return event;
-            }
-        }
-
-        // Check PTT key
-        if keycode == context.ptt_keycode {
-            // Check if the modifier is pressed by looking at the flags
-            let flags = unsafe { macos_ffi::CGEventGetFlags(event) };
-            let is_pressed = match context.ptt_keycode {
-                keycode::RIGHT_OPTION | keycode::LEFT_OPTION => {
-                    (flags & macos_ffi::kCGEventFlagMaskAlternate) != 0
-                }
-                keycode::RIGHT_CONTROL | keycode::LEFT_CONTROL => {
-                    (flags & macos_ffi::kCGEventFlagMaskControl) != 0
-                }
-                keycode::RIGHT_SHIFT | keycode::LEFT_SHIFT => {
-                    (flags & macos_ffi::kCGEventFlagMaskShift) != 0
-                }
-                keycode::CAPS_LOCK => (flags & macos_ffi::kCGEventFlagMaskAlphaShift) != 0,
-                _ => false,
-            };
-
-            let was_down = context.ptt_key_down.load(Ordering::SeqCst);
-
-            if is_pressed && !was_down {
-                context.ptt_key_down.store(true, Ordering::SeqCst);
-                // Suppress PTT if auto mode is active
-                if !context.auto_mode_state.is_active() {
-                    debug!("[Hotkey] PTT key pressed (flags changed)");
-                    let _ = context.sender.send(HotkeyEvent::PttPressed);
-                }
-            } else if !is_pressed && was_down {
-                context.ptt_key_down.store(false, Ordering::SeqCst);
-                if !context.auto_mode_state.is_active() {
-                    debug!("[Hotkey] PTT key released (flags changed)");
-                    let _ = context.sender.send(HotkeyEvent::PttReleased);
-                }
-            }
-        }
+        handle_modifier_key(context, keycode, flags);
+    } else if event_type == macos_ffi::kCGEventKeyDown || event_type == macos_ffi::kCGEventKeyUp {
+        let is_key_down = event_type == macos_ffi::kCGEventKeyDown;
+        handle_regular_key(context, keycode, is_key_down);
     }
-    // Handle regular key events (for function keys)
-    else if event_type == macos_ffi::kCGEventKeyDown || event_type == macos_ffi::kCGEventKeyUp {
-        let keycode = unsafe {
-            macos_ffi::CGEventGetIntegerValueField(event, macos_ffi::kCGKeyboardEventKeycode)
-        } as u16;
 
-        // Check toggle key
-        if let Some(toggle_kc) = context.toggle_keycode {
-            if keycode == toggle_kc && event_type == macos_ffi::kCGEventKeyDown {
-                let was_down = context.toggle_key_down.swap(true, Ordering::SeqCst);
-                if !was_down {
-                    debug!("[Hotkey] Toggle key pressed (key down)");
-                    let _ = context.sender.send(HotkeyEvent::TogglePressed);
-                }
-            } else if keycode == toggle_kc && event_type == macos_ffi::kCGEventKeyUp {
-                context.toggle_key_down.store(false, Ordering::SeqCst);
-            }
-        }
-
-        // Check PTT key
-        if keycode == context.ptt_keycode {
-            if event_type == macos_ffi::kCGEventKeyDown {
-                let was_down = context.ptt_key_down.swap(true, Ordering::SeqCst);
-                if !was_down && !context.auto_mode_state.is_active() {
-                    debug!("[Hotkey] PTT key pressed (key down)");
-                    let _ = context.sender.send(HotkeyEvent::PttPressed);
-                }
-            } else {
-                context.ptt_key_down.store(false, Ordering::SeqCst);
-                if !context.auto_mode_state.is_active() {
-                    debug!("[Hotkey] PTT key released (key up)");
-                    let _ = context.sender.send(HotkeyEvent::PttReleased);
-                }
-            }
-        }
-    }
+    check_combinations(context);
 
     event
+}
+
+fn handle_modifier_key(context: &EventTapContext, keycode: u16, flags: macos_ffi::CGEventFlags) {
+    let key_code = match macos_to_keycode(keycode) {
+        Some(k) => k,
+        None => return,
+    };
+
+    let is_pressed = match keycode {
+        keycode::RIGHT_OPTION | keycode::LEFT_OPTION => {
+            (flags & macos_ffi::kCGEventFlagMaskAlternate) != 0
+        }
+        keycode::RIGHT_CONTROL | keycode::LEFT_CONTROL => {
+            (flags & macos_ffi::kCGEventFlagMaskControl) != 0
+        }
+        keycode::RIGHT_SHIFT | keycode::LEFT_SHIFT => {
+            (flags & macos_ffi::kCGEventFlagMaskShift) != 0
+        }
+        keycode::CAPS_LOCK => (flags & macos_ffi::kCGEventFlagMaskAlphaShift) != 0,
+        keycode::LEFT_META | keycode::RIGHT_META => {
+            (flags & macos_ffi::kCGEventFlagMaskCommand) != 0
+        }
+        _ => return,
+    };
+
+    if let Ok(mut pressed) = context.pressed_keys.lock() {
+        if is_pressed {
+            pressed.insert(key_code);
+        } else {
+            pressed.remove(&key_code);
+        }
+    }
+}
+
+fn handle_regular_key(context: &EventTapContext, keycode: u16, is_key_down: bool) {
+    let key_code = match macos_to_keycode(keycode) {
+        Some(k) => k,
+        None => return,
+    };
+
+    if let Ok(mut pressed) = context.pressed_keys.lock() {
+        if is_key_down {
+            pressed.insert(key_code);
+        } else {
+            pressed.remove(&key_code);
+        }
+    }
+}
+
+fn check_combinations(context: &EventTapContext) {
+    let pressed = match context.pressed_keys.lock() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let now_toggle_matched = context
+        .toggle_hotkeys
+        .iter()
+        .any(|combo| combo.is_subset_of(&pressed));
+
+    if now_toggle_matched && !context.any_toggle_matched.load(Ordering::SeqCst) {
+        context.any_toggle_matched.store(true, Ordering::SeqCst);
+        debug!("[Hotkey] Toggle hotkey pressed");
+        let _ = context.sender.send(HotkeyEvent::TogglePressed);
+    } else if !now_toggle_matched && context.any_toggle_matched.load(Ordering::SeqCst) {
+        context.any_toggle_matched.store(false, Ordering::SeqCst);
+    }
+
+    let now_ptt_matched = context
+        .ptt_hotkeys
+        .iter()
+        .any(|combo| combo.is_subset_of(&pressed));
+
+    let suppress_ptt = context.auto_mode_state.is_active();
+
+    if now_ptt_matched && !context.any_ptt_matched.load(Ordering::SeqCst) {
+        context.any_ptt_matched.store(true, Ordering::SeqCst);
+        if !suppress_ptt {
+            info!("[PTT] Combination MATCHED - key DOWN");
+            let _ = context.sender.send(HotkeyEvent::PttPressed);
+        } else {
+            debug!("[PTT] PTT suppressed (auto mode active)");
+        }
+    } else if !now_ptt_matched && context.any_ptt_matched.load(Ordering::SeqCst) {
+        context.any_ptt_matched.store(false, Ordering::SeqCst);
+        if !suppress_ptt {
+            info!("[PTT] Combination RELEASED - key UP");
+            let _ = context.sender.send(HotkeyEvent::PttReleased);
+        }
+    }
 }
 
 /// FFI bindings for macOS APIs
@@ -465,6 +761,7 @@ mod macos_ffi {
     pub const kCGEventFlagMaskControl: CGEventFlags = 0x00040000;
     pub const kCGEventFlagMaskShift: CGEventFlags = 0x00020000;
     pub const kCGEventFlagMaskAlphaShift: CGEventFlags = 0x00010000;
+    pub const kCGEventFlagMaskCommand: CGEventFlags = 0x00100000;
 
     // Run loop constants
     pub const kCFRunLoopRunFinished: i32 = 1;
