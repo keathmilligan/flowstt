@@ -220,6 +220,8 @@ async fn get_status(state: State<'_, AppState>) -> Result<LocalStatus, String> {
 struct LocalPttStatus {
     mode: TranscriptionMode,
     hotkeys: Vec<HotkeyCombination>,
+    auto_toggle_hotkeys: Vec<HotkeyCombination>,
+    auto_mode_active: bool,
     is_active: bool,
     available: bool,
     error: Option<String>,
@@ -265,10 +267,48 @@ async fn get_ptt_status(state: State<'_, AppState>) -> Result<LocalPttStatus, St
         Response::PttStatus(status) => Ok(LocalPttStatus {
             mode: status.mode,
             hotkeys: status.hotkeys,
+            auto_toggle_hotkeys: status.auto_toggle_hotkeys,
+            auto_mode_active: status.auto_mode_active,
             is_active: status.is_active,
             available: status.available,
             error: status.error,
         }),
+        Response::Error { message } => Err(message),
+        _ => Err("Unexpected response".into()),
+    }
+}
+
+/// Set the auto-mode toggle hotkeys
+#[tauri::command]
+async fn set_auto_toggle_hotkeys(
+    hotkeys: Vec<HotkeyCombination>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let response =
+        send_request(&state.ipc, Request::SetAutoToggleHotkeys { hotkeys }).await?;
+
+    match response {
+        Response::Ok => Ok(()),
+        Response::Error { message } => Err(message),
+        _ => Err("Unexpected response".into()),
+    }
+}
+
+/// Toggle between Automatic and PushToTalk modes
+#[tauri::command]
+async fn toggle_auto_mode(state: State<'_, AppState>) -> Result<TranscriptionMode, String> {
+    let response = send_request(&state.ipc, Request::ToggleAutoMode).await?;
+
+    match response {
+        Response::Ok => {
+            // Get the new mode
+            let status_response = send_request(&state.ipc, Request::GetPttStatus).await?;
+            match status_response {
+                Response::PttStatus(status) => Ok(status.mode),
+                Response::Error { message } => Err(message),
+                _ => Err("Unexpected response".into()),
+            }
+        }
         Response::Error { message } => Err(message),
         _ => Err("Unexpected response".into()),
     }
@@ -646,6 +686,8 @@ pub fn run() {
             set_transcription_mode,
             set_ptt_hotkeys,
             get_ptt_status,
+            set_auto_toggle_hotkeys,
+            toggle_auto_mode,
             get_history,
             delete_history_entry,
             connect_events,

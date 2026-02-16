@@ -24,6 +24,8 @@ interface HotkeyCombination {
 interface PttStatus {
   mode: string;
   hotkeys: HotkeyCombination[];
+  auto_toggle_hotkeys: HotkeyCombination[];
+  auto_mode_active: boolean;
   is_active: boolean;
   available: boolean;
   error: string | null;
@@ -155,11 +157,20 @@ let recorderEl: HTMLDivElement;
 let recorderStatusEl: HTMLSpanElement;
 let warningEl: HTMLDivElement;
 let addHotkeyBtn: HTMLButtonElement;
+// Toggle hotkey UI - disabled for now
+// let toggleHotkeyListEl: HTMLDivElement;
+// let toggleRecorderEl: HTMLDivElement;
+// let toggleRecorderStatusEl: HTMLSpanElement;
+// let toggleWarningEl: HTMLDivElement;
+// let setToggleHotkeyBtn: HTMLButtonElement;
 
 // State
 let allDevices: AudioDevice[] = [];
 let hotkeys: HotkeyCombination[] = [];
+// Toggle hotkey state - disabled for now
+// let toggleHotkeys: HotkeyCombination[] = [];
 let isRecording = false;
+// let isRecordingToggle = false;
 /** All keys that have been pressed during this recording (the combination to save). */
 let recordedKeys: Set<string> = new Set();
 /** Keys physically held right now. */
@@ -168,6 +179,11 @@ let releaseTimer: number | null = null;
 const RELEASE_DEBOUNCE_MS = 200;
 const RECORD_TIMEOUT_MS = 5000;
 let recordTimeoutTimer: number | null = null;
+// Toggle hotkey recording state - disabled for now
+// let toggleRecordedKeys: Set<string> = new Set();
+// let toggleCurrentlyHeldKeys: Set<string> = new Set();
+// let toggleReleaseTimer: number | null = null;
+// let toggleRecordTimeoutTimer: number | null = null;
 
 function populateSourceDropdown(
   select: HTMLSelectElement,
@@ -233,6 +249,183 @@ async function saveHotkeys() {
     console.error("Error setting PTT hotkeys:", error);
   }
 }
+
+// Toggle hotkey functions - disabled for now
+/*
+function renderToggleHotkeys() {
+  toggleHotkeyListEl.innerHTML = "";
+
+  if (toggleHotkeys.length === 0) {
+    const emptyMsg = document.createElement("div");
+    emptyMsg.className = "hotkey-empty";
+    emptyMsg.textContent = "No toggle hotkeys configured";
+    toggleHotkeyListEl.appendChild(emptyMsg);
+    return;
+  }
+
+  toggleHotkeys.forEach((combo, index) => {
+    const item = document.createElement("div");
+    item.className = "hotkey-item";
+
+    const label = document.createElement("span");
+    label.className = "hotkey-label";
+    label.textContent = combinationDisplayName(combo);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "hotkey-remove-btn";
+    removeBtn.textContent = "\u00d7";
+    removeBtn.title = "Remove";
+    removeBtn.type = "button";
+    removeBtn.addEventListener("click", () => removeToggleHotkey(index));
+
+    item.appendChild(label);
+    item.appendChild(removeBtn);
+    toggleHotkeyListEl.appendChild(item);
+  });
+}
+
+async function removeToggleHotkey(index: number) {
+  toggleHotkeys.splice(index, 1);
+  renderToggleHotkeys();
+  await saveToggleHotkeys();
+}
+
+async function saveToggleHotkeys() {
+  try {
+    await invoke("set_auto_toggle_hotkeys", { hotkeys: toggleHotkeys });
+  } catch (error) {
+    console.error("Error setting toggle hotkeys:", error);
+  }
+}
+
+function startToggleRecording() {
+  if (isRecordingToggle) return;
+
+  isRecordingToggle = true;
+  toggleRecordedKeys.clear();
+  toggleCurrentlyHeldKeys.clear();
+  toggleRecorderEl.classList.remove("hidden");
+  toggleRecorderStatusEl.textContent = "Press keys...";
+  setToggleHotkeyBtn.classList.add("hidden");
+  hideToggleWarning();
+
+  toggleRecordTimeoutTimer = window.setTimeout(() => {
+    if (isRecordingToggle && toggleRecordedKeys.size === 0) {
+      showToggleWarning("No keys detected. Some keys may be intercepted by the OS.");
+    }
+  }, RECORD_TIMEOUT_MS);
+}
+
+function stopToggleRecording(cancelled: boolean) {
+  if (!isRecordingToggle) return;
+
+  isRecordingToggle = false;
+  toggleRecorderEl.classList.add("hidden");
+  setToggleHotkeyBtn.classList.remove("hidden");
+
+  if (toggleReleaseTimer !== null) {
+    clearTimeout(toggleReleaseTimer);
+    toggleReleaseTimer = null;
+  }
+  if (toggleRecordTimeoutTimer !== null) {
+    clearTimeout(toggleRecordTimeoutTimer);
+    toggleRecordTimeoutTimer = null;
+  }
+
+  if (cancelled || toggleRecordedKeys.size === 0) {
+    toggleRecordedKeys.clear();
+    return;
+  }
+
+  const newCombo: HotkeyCombination = { keys: Array.from(toggleRecordedKeys) };
+  toggleRecordedKeys.clear();
+
+  // Check for duplicate
+  if (toggleHotkeys.some((existing) => combinationsEqual(existing, newCombo))) {
+    showToggleWarning("This hotkey combination is already configured.");
+    return;
+  }
+
+  // Warn about single non-modifier key
+  if (
+    newCombo.keys.length === 1 &&
+    !MODIFIER_KEYS.has(newCombo.keys[0])
+  ) {
+    showToggleWarning(
+      `Warning: "${keyDisplayName(newCombo.keys[0])}" alone may conflict with normal typing.`
+    );
+  }
+
+  toggleHotkeys.push(newCombo);
+  renderToggleHotkeys();
+  saveToggleHotkeys();
+}
+
+function showToggleWarning(msg: string) {
+  toggleWarningEl.textContent = msg;
+  toggleWarningEl.classList.remove("hidden");
+}
+
+function hideToggleWarning() {
+  toggleWarningEl.textContent = "";
+  toggleWarningEl.classList.add("hidden");
+}
+
+function handleToggleRecordKeyDown(e: KeyboardEvent) {
+  if (!isRecordingToggle) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (e.code === "Escape") {
+    stopToggleRecording(true);
+    return;
+  }
+
+  if (toggleReleaseTimer !== null) {
+    clearTimeout(toggleReleaseTimer);
+    toggleReleaseTimer = null;
+  }
+
+  if (toggleRecordTimeoutTimer !== null) {
+    clearTimeout(toggleRecordTimeoutTimer);
+    toggleRecordTimeoutTimer = null;
+  }
+  hideToggleWarning();
+
+  const keyCode = BROWSER_CODE_MAP[e.code];
+  if (!keyCode) return;
+
+  toggleCurrentlyHeldKeys.add(keyCode);
+  toggleRecordedKeys.add(keyCode);
+
+  const combo: HotkeyCombination = { keys: Array.from(toggleRecordedKeys) };
+  toggleRecorderStatusEl.textContent = combinationDisplayName(combo);
+}
+
+function handleToggleRecordKeyUp(e: KeyboardEvent) {
+  if (!isRecordingToggle) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const keyCode = BROWSER_CODE_MAP[e.code];
+  if (keyCode) {
+    toggleCurrentlyHeldKeys.delete(keyCode);
+  }
+
+  if (toggleCurrentlyHeldKeys.size === 0 && toggleRecordedKeys.size > 0) {
+    if (toggleReleaseTimer !== null) {
+      clearTimeout(toggleReleaseTimer);
+    }
+    toggleReleaseTimer = window.setTimeout(() => {
+      if (isRecordingToggle) {
+        stopToggleRecording(false);
+      }
+    }, RELEASE_DEBOUNCE_MS);
+  }
+}
+*/
 
 function startRecording() {
   if (isRecording) return;
@@ -316,19 +509,16 @@ function handleRecordKeyDown(e: KeyboardEvent) {
   e.preventDefault();
   e.stopPropagation();
 
-  // Escape cancels recording
   if (e.code === "Escape") {
     stopRecording(true);
     return;
   }
 
-  // Cancel any pending release timer - user is still pressing keys
   if (releaseTimer !== null) {
     clearTimeout(releaseTimer);
     releaseTimer = null;
   }
 
-  // Clear timeout warning since a key was detected
   if (recordTimeoutTimer !== null) {
     clearTimeout(recordTimeoutTimer);
     recordTimeoutTimer = null;
@@ -336,12 +526,11 @@ function handleRecordKeyDown(e: KeyboardEvent) {
   hideWarning();
 
   const keyCode = BROWSER_CODE_MAP[e.code];
-  if (!keyCode) return; // Unmapped key
+  if (!keyCode) return;
 
   currentlyHeldKeys.add(keyCode);
   recordedKeys.add(keyCode);
 
-  // Update display with the full accumulated combination
   const combo: HotkeyCombination = { keys: Array.from(recordedKeys) };
   recorderStatusEl.textContent = combinationDisplayName(combo);
 }
@@ -357,7 +546,6 @@ function handleRecordKeyUp(e: KeyboardEvent) {
     currentlyHeldKeys.delete(keyCode);
   }
 
-  // When all physical keys are released, debounce and finalize
   if (currentlyHeldKeys.size === 0 && recordedKeys.size > 0) {
     if (releaseTimer !== null) {
       clearTimeout(releaseTimer);
@@ -370,9 +558,14 @@ function handleRecordKeyUp(e: KeyboardEvent) {
   }
 }
 
+// Toggle hotkey recording handlers - disabled for now
+/*
+function handleToggleRecordKeyDown(e: KeyboardEvent) { ... }
+function handleToggleRecordKeyUp(e: KeyboardEvent) { ... }
+*/
+
 async function loadState() {
   try {
-    // Fetch devices, current status, and PTT status in parallel
     const [devices, status, pttStatus] = await Promise.all([
       invoke<AudioDevice[]>("list_all_sources"),
       invoke<CaptureStatus>("get_status"),
@@ -381,11 +574,9 @@ async function loadState() {
 
     allDevices = devices;
 
-    // Populate dropdowns
     populateSourceDropdown(source1Select, allDevices);
     populateSourceDropdown(source2Select, allDevices);
 
-    // Pre-select current values
     if (status.source1_id) {
       source1Select.value = status.source1_id;
     }
@@ -393,9 +584,12 @@ async function loadState() {
       source2Select.value = status.source2_id;
     }
 
-    // Load hotkey bindings
     hotkeys = pttStatus.hotkeys || [];
     renderHotkeyList();
+
+    // Toggle hotkeys loading - disabled for now
+    // toggleHotkeys = pttStatus.auto_toggle_hotkeys || [];
+    // renderToggleHotkeys();
   } catch (error) {
     console.error("Failed to load config state:", error);
     source1Select.innerHTML = `<option value="">Error loading devices</option>`;
@@ -414,15 +608,12 @@ async function onSourceChange() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // Initialize theme before first paint
   await initTheme();
 
-  // Disable default context menu
   document.addEventListener("contextmenu", (e) => {
     e.preventDefault();
   });
 
-  // Get DOM elements
   themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
   source1Select = document.getElementById("source1-select") as HTMLSelectElement;
   source2Select = document.getElementById("source2-select") as HTMLSelectElement;
@@ -431,8 +622,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   recorderStatusEl = document.getElementById("recorder-status") as HTMLSpanElement;
   warningEl = document.getElementById("hotkey-warning") as HTMLDivElement;
   addHotkeyBtn = document.getElementById("add-hotkey-btn") as HTMLButtonElement;
+  // Toggle hotkey UI - disabled for now
+  // toggleHotkeyListEl = document.getElementById("toggle-hotkey-list") as HTMLDivElement;
+  // toggleRecorderEl = document.getElementById("toggle-hotkey-recorder") as HTMLDivElement;
+  // toggleRecorderStatusEl = document.getElementById("toggle-recorder-status") as HTMLSpanElement;
+  // toggleWarningEl = document.getElementById("toggle-hotkey-warning") as HTMLDivElement;
+  // setToggleHotkeyBtn = document.getElementById("set-toggle-hotkey-btn") as HTMLButtonElement;
 
-  // Close button
   const closeBtn = document.getElementById("close-btn");
   if (closeBtn) {
     closeBtn.addEventListener("click", async (e) => {
@@ -443,24 +639,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Wire change handlers
   source1Select.addEventListener("change", onSourceChange);
   source2Select.addEventListener("change", onSourceChange);
   addHotkeyBtn.addEventListener("click", startRecording);
+  // Toggle hotkey button - disabled for now
+  // setToggleHotkeyBtn.addEventListener("click", startToggleRecording);
 
-  // Theme selector: pre-select current mode and wire change handler
   themeSelect.value = getThemeMode();
   themeSelect.addEventListener("change", async () => {
     const mode = themeSelect.value as ThemeMode;
     await setThemeMode(mode);
   });
 
-  // Hotkey recorder key handlers (always on document, gated by isRecording)
   document.addEventListener("keydown", (e) => {
     if (isRecording) {
       handleRecordKeyDown(e);
+    // Toggle hotkey recording - disabled for now
+    // } else if (isRecordingToggle) {
+    //   handleToggleRecordKeyDown(e);
     } else {
-      // Suppress default keyboard behaviour in this decorationless window
       if (e.key === "F4" && e.altKey) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "SELECT" || tag === "INPUT" || tag === "BUTTON") return;
@@ -471,6 +668,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.addEventListener("keyup", (e) => {
     if (isRecording) {
       handleRecordKeyUp(e);
+    // Toggle hotkey recording - disabled for now
+    // } else if (isRecordingToggle) {
+    //   handleToggleRecordKeyUp(e);
     } else {
       if (e.key === "F4" && e.altKey) return;
       const tag = (e.target as HTMLElement)?.tagName;
@@ -479,6 +679,5 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Load current state and populate dropdowns
   await loadState();
 });

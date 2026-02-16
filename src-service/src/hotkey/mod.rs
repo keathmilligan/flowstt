@@ -2,7 +2,7 @@
 //!
 //! This module provides platform-specific global hotkey capture:
 //! - macOS: CGEventTap API (requires Accessibility permission)
-//! - Windows: Stub (not yet implemented)
+//! - Windows: Raw Input API
 //! - Linux: Stub (not yet implemented)
 
 mod backend;
@@ -68,11 +68,14 @@ pub fn get_hotkey_backend() -> Option<Arc<Mutex<Box<dyn HotkeyBackend>>>> {
     HOTKEY_BACKEND.get().cloned()
 }
 
-/// Start hotkey monitoring with the specified combinations.
-pub fn start_hotkey(hotkeys: Vec<HotkeyCombination>) -> Result<(), String> {
+/// Start hotkey monitoring with the specified PTT combinations and toggle hotkeys.
+pub fn start_hotkey(
+    ptt_hotkeys: Vec<HotkeyCombination>,
+    toggle_hotkeys: Vec<HotkeyCombination>,
+) -> Result<(), String> {
     let backend = get_hotkey_backend().ok_or("Hotkey backend not available")?;
     let mut backend = backend.lock().map_err(|e| format!("Lock error: {}", e))?;
-    backend.start(hotkeys)
+    backend.start(ptt_hotkeys, toggle_hotkeys)
 }
 
 /// Stop hotkey monitoring.
@@ -106,4 +109,14 @@ pub fn hotkey_unavailable_reason() -> Option<String> {
     let backend = get_hotkey_backend()?;
     let backend = backend.lock().ok()?;
     backend.unavailable_reason()
+}
+
+/// Set whether auto mode is active (affects PTT event suppression).
+/// When auto mode is active, PTT events are suppressed but toggle events are not.
+pub fn set_auto_mode_active(active: bool) {
+    if let Some(backend) = get_hotkey_backend() {
+        if let Ok(mut backend) = backend.lock() {
+            backend.set_auto_mode_active(active);
+        }
+    }
 }

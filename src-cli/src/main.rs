@@ -92,6 +92,9 @@ enum Commands {
         action: ConfigAction,
     },
 
+    /// Toggle between Automatic and Push-to-Talk transcription modes
+    ToggleAuto,
+
     /// Run interactive first-time setup wizard
     Setup,
 
@@ -145,7 +148,7 @@ enum ConfigAction {
 }
 
 /// Valid configuration key names.
-const VALID_CONFIG_KEYS: &[&str] = &["transcription_mode", "ptt_hotkeys"];
+const VALID_CONFIG_KEYS: &[&str] = &["transcription_mode", "ptt_hotkeys", "auto_toggle_hotkeys"];
 
 /// Error with an associated exit code.
 struct CliError {
@@ -588,6 +591,43 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             }
         }
 
+        Commands::ToggleAuto => {
+            let response = client
+                .request(Request::ToggleAutoMode)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            match response {
+                Response::Ok => {
+                    // Get the new mode from state
+                    let status_response = client
+                        .request(Request::GetPttStatus)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    if let Response::PttStatus(status) = status_response {
+                        let mode_str = match status.mode {
+                            TranscriptionMode::Automatic => "Automatic",
+                            TranscriptionMode::PushToTalk => "Push-to-Talk",
+                        };
+                        if !cli.quiet {
+                            println!("{} transcription mode: {}", "Toggled".green().bold(), mode_str);
+                        }
+                        if matches!(cli.format, OutputFormat::Json) {
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&serde_json::json!({
+                                    "mode": status.mode
+                                }))
+                                .map_err(|e| e.to_string())?
+                            );
+                        }
+                    }
+                }
+                Response::Error { message } => return Err(message.into()),
+                _ => return Err("Unexpected response".into()),
+            }
+        }
+
         Commands::Setup => {
             // Already handled above
             unreachable!()
@@ -640,6 +680,7 @@ async fn get_config_values(client: &mut Client) -> Result<ConfigValues, CliError
     Ok(ConfigValues {
         transcription_mode: config.transcription_mode,
         ptt_hotkeys: config.ptt_hotkeys,
+        auto_toggle_hotkeys: config.auto_toggle_hotkeys,
         auto_paste_enabled: config.auto_paste_enabled,
         auto_paste_delay_ms: config.auto_paste_delay_ms,
     })
@@ -691,6 +732,11 @@ async fn handle_config_show(client: &mut Client, cli: &Cli) -> Result<(), CliErr
             "ptt_hotkeys".bold(),
             format_hotkeys_display(&values.ptt_hotkeys)
         );
+        println!(
+            "{}: {}",
+            "auto_toggle_hotkeys".bold(),
+            format_hotkeys_display(&values.auto_toggle_hotkeys)
+        );
     }
 
     Ok(())
@@ -731,6 +777,17 @@ async fn handle_config_get(
                 );
             } else {
                 println!("{}", format_hotkeys_display(&values.ptt_hotkeys));
+            }
+        }
+        "auto_toggle_hotkeys" => {
+            if matches!(cli.format, OutputFormat::Json) {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&values.auto_toggle_hotkeys)
+                        .map_err(|e| e.to_string())?
+                );
+            } else {
+                println!("{}", format_hotkeys_display(&values.auto_toggle_hotkeys));
             }
         }
         _ => unreachable!(), // validate_config_key already checked
@@ -825,6 +882,48 @@ async fn handle_config_set(
             if !cli.quiet {
                 println!(
                     "{} ptt_hotkeys = {}",
+                    "Set".green().bold(),
+                    format_hotkeys_display(&hotkeys)
+                );
+            }
+        }
+        "auto_toggle_hotkeys" => {
+            let hotkeys: Vec<HotkeyCombination> = if value == "null" || value == "none" || value == "[]" {
+                vec![]
+            } else {
+                serde_json::from_str(value).map_err(|e| {
+                    CliError::usage(format!(
+                        "Invalid JSON for auto_toggle_hotkeys: {}\nExpected format: {} or []",
+                        e,
+                        r#"[{"keys":["f13"]}]"#
+                    ))
+                })?
+            };
+
+            if service_available {
+                let response = client
+                    .request(Request::SetAutoToggleHotkeys {
+                        hotkeys: hotkeys.clone(),
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?;
+                match response {
+                    Response::Ok => {}
+                    Response::Error { message } => return Err(CliError::general(message)),
+                    _ => return Err(CliError::general("Unexpected response")),
+                }
+            } else {
+                // Offline: write directly to config file
+                let mut config = Config::load();
+                config.auto_toggle_hotkeys = hotkeys.clone();
+                config
+                    .save()
+                    .map_err(|e| CliError::general(format!("Failed to save config: {}", e)))?;
+            }
+
+            if !cli.quiet {
+                println!(
+                    "{} auto_toggle_hotkeys = {}",
                     "Set".green().bold(),
                     format_hotkeys_display(&hotkeys)
                 );
@@ -1015,11 +1114,45 @@ async fn handle_setup(client: &mut Client, _cli: &Cli) -> Result<(), CliError> {
         }
     }
 
+    // --- Step 4: Auto-mode Toggle Hotkey ---
+    let mut toggle_hotkeys: Vec<HotkeyCombination> = vec![HotkeyCombination::single(KeyCode::F13)];
+    
+    println!("\n{}", "Step 4: Auto-mode Toggle Hotkey".bold());
+    println!("  This hotkey toggles between Automatic and Push-to-Talk modes.");
+    print!("  Toggle key [default=F13, or type key name, or 'none' to disable]: ");
+    stdout.flush().unwrap();
+    let mut toggle_answer = String::new();
+    stdin.lock().read_line(&mut toggle_answer).unwrap();
+    let toggle_str = toggle_answer.trim();
+    
+    if toggle_str.eq_ignore_ascii_case("none") || toggle_str.eq_ignore_ascii_case("disabled") {
+        toggle_hotkeys = vec![];
+        println!("  Toggle hotkey: {}", "disabled".yellow());
+    } else if !toggle_str.is_empty() {
+        let key_json = format!("\"{}\"", toggle_str);
+        match serde_json::from_str::<KeyCode>(&key_json) {
+            Ok(key) => {
+                toggle_hotkeys = vec![HotkeyCombination::single(key)];
+                println!("  Toggle hotkey: {}", toggle_str.green());
+            }
+            Err(_) => {
+                println!(
+                    "  {}: Unknown key '{}', using F13",
+                    "Warning".yellow(),
+                    toggle_str
+                );
+            }
+        }
+    } else {
+        println!("  Toggle hotkey: {}", "F13".green());
+    }
+
     // --- Save config ---
     println!("\n{}", "Saving configuration...".bold());
     let config = Config {
         transcription_mode: mode,
         ptt_hotkeys: vec![hotkey],
+        auto_toggle_hotkeys: toggle_hotkeys,
         ..Config::default_with_hotkeys()
     };
     config

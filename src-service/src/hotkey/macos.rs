@@ -3,7 +3,7 @@
 //! This implementation uses the Core Graphics Event Tap API to monitor
 //! global keyboard events. It requires Accessibility permission to function.
 
-use super::backend::{HotkeyBackend, HotkeyEvent};
+use super::backend::{AutoModeState, HotkeyBackend, HotkeyEvent};
 use flowstt_common::{HotkeyCombination, KeyCode};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -64,6 +64,8 @@ pub struct MacOSHotkeyBackend {
     thread_handle: Option<JoinHandle<()>>,
     /// Last known unavailability reason
     unavailable_reason: Option<String>,
+    /// Auto mode state for PTT suppression (shared with event tap thread)
+    auto_mode_state: Arc<AutoModeState>,
 }
 
 impl MacOSHotkeyBackend {
@@ -73,6 +75,7 @@ impl MacOSHotkeyBackend {
             receiver: None,
             thread_handle: None,
             unavailable_reason: None,
+            auto_mode_state: AutoModeState::shared(),
         }
     }
 
@@ -112,17 +115,23 @@ impl MacOSHotkeyBackend {
 }
 
 impl HotkeyBackend for MacOSHotkeyBackend {
-    fn start(&mut self, hotkeys: Vec<HotkeyCombination>) -> Result<(), String> {
+    fn start(
+        &mut self,
+        ptt_hotkeys: Vec<HotkeyCombination>,
+        toggle_hotkeys: Vec<HotkeyCombination>,
+    ) -> Result<(), String> {
         if self.running.load(Ordering::SeqCst) {
             return Err("Hotkey backend already running".to_string());
         }
 
         // macOS backend: for now, use the first key of the first combination
         // (full combination support to be implemented later)
-        let key = hotkeys
+        let ptt_key = ptt_hotkeys
             .first()
             .and_then(|h| h.keys.first().copied())
             .unwrap_or_default();
+
+        let toggle_key = toggle_hotkeys.first().and_then(|h| h.keys.first().copied());
 
         // Check accessibility permission, prompt if not granted
         if !Self::check_accessibility_permission() {
@@ -142,16 +151,24 @@ impl HotkeyBackend for MacOSHotkeyBackend {
         let running = self.running.clone();
         running.store(true, Ordering::SeqCst);
 
-        let target_keycode = keycode_to_macos(key);
+        let ptt_keycode = keycode_to_macos(ptt_key);
+        let toggle_keycode = toggle_key.map(keycode_to_macos);
+        let auto_mode_state = self.auto_mode_state.clone();
 
         // Spawn the event tap thread
         let handle = thread::spawn(move || {
             info!(
-                "[Hotkey] Starting macOS event tap for key code {}",
-                target_keycode
+                "[Hotkey] Starting macOS event tap for PTT key {}, toggle key {:?}",
+                ptt_keycode, toggle_keycode
             );
 
-            if let Err(e) = run_event_tap(running.clone(), sender, target_keycode) {
+            if let Err(e) = run_event_tap(
+                running.clone(),
+                sender,
+                ptt_keycode,
+                toggle_keycode,
+                auto_mode_state,
+            ) {
                 error!("[Hotkey] Event tap error: {}", e);
             }
 
@@ -198,6 +215,11 @@ impl HotkeyBackend for MacOSHotkeyBackend {
         // Only report unavailability if we tried to start and failed
         self.unavailable_reason.clone()
     }
+
+    fn set_auto_mode_active(&mut self, active: bool) {
+        self.auto_mode_state.set_active(active);
+        debug!("[Hotkey] Auto mode PTT suppression: {}", active);
+    }
 }
 
 impl Drop for MacOSHotkeyBackend {
@@ -210,7 +232,9 @@ impl Drop for MacOSHotkeyBackend {
 fn run_event_tap(
     running: Arc<AtomicBool>,
     sender: Sender<HotkeyEvent>,
-    target_keycode: u16,
+    ptt_keycode: u16,
+    toggle_keycode: Option<u16>,
+    auto_mode_state: Arc<AutoModeState>,
 ) -> Result<(), String> {
     unsafe {
         // Create a mach port for the event tap
@@ -221,8 +245,11 @@ fn run_event_tap(
         // Store context for the callback
         let context = Box::new(EventTapContext {
             sender,
-            target_keycode,
-            key_down: AtomicBool::new(false),
+            ptt_keycode,
+            toggle_keycode,
+            ptt_key_down: AtomicBool::new(false),
+            toggle_key_down: AtomicBool::new(false),
+            auto_mode_state,
         });
         let context_ptr = Box::into_raw(context);
 
@@ -292,8 +319,11 @@ fn run_event_tap(
 /// Context passed to the event tap callback
 struct EventTapContext {
     sender: Sender<HotkeyEvent>,
-    target_keycode: u16,
-    key_down: AtomicBool,
+    ptt_keycode: u16,
+    toggle_keycode: Option<u16>,
+    ptt_key_down: AtomicBool,
+    toggle_key_down: AtomicBool,
+    auto_mode_state: Arc<AutoModeState>,
 }
 
 /// CGEventTap callback function
@@ -311,10 +341,23 @@ extern "C" fn event_tap_callback(
             macos_ffi::CGEventGetIntegerValueField(event, macos_ffi::kCGKeyboardEventKeycode)
         } as u16;
 
-        if keycode == context.target_keycode {
+        // Check if this is a toggle key
+        if let Some(toggle_kc) = context.toggle_keycode {
+            if keycode == toggle_kc {
+                let was_down = context.toggle_key_down.swap(true, Ordering::SeqCst);
+                if !was_down {
+                    debug!("[Hotkey] Toggle key pressed (flags changed)");
+                    let _ = context.sender.send(HotkeyEvent::TogglePressed);
+                }
+                return event;
+            }
+        }
+
+        // Check PTT key
+        if keycode == context.ptt_keycode {
             // Check if the modifier is pressed by looking at the flags
             let flags = unsafe { macos_ffi::CGEventGetFlags(event) };
-            let is_pressed = match context.target_keycode {
+            let is_pressed = match context.ptt_keycode {
                 keycode::RIGHT_OPTION | keycode::LEFT_OPTION => {
                     (flags & macos_ffi::kCGEventFlagMaskAlternate) != 0
                 }
@@ -328,16 +371,21 @@ extern "C" fn event_tap_callback(
                 _ => false,
             };
 
-            let was_down = context.key_down.load(Ordering::SeqCst);
+            let was_down = context.ptt_key_down.load(Ordering::SeqCst);
 
             if is_pressed && !was_down {
-                context.key_down.store(true, Ordering::SeqCst);
-                debug!("[Hotkey] PTT key pressed (flags changed)");
-                let _ = context.sender.send(HotkeyEvent::Pressed);
+                context.ptt_key_down.store(true, Ordering::SeqCst);
+                // Suppress PTT if auto mode is active
+                if !context.auto_mode_state.is_active() {
+                    debug!("[Hotkey] PTT key pressed (flags changed)");
+                    let _ = context.sender.send(HotkeyEvent::PttPressed);
+                }
             } else if !is_pressed && was_down {
-                context.key_down.store(false, Ordering::SeqCst);
-                debug!("[Hotkey] PTT key released (flags changed)");
-                let _ = context.sender.send(HotkeyEvent::Released);
+                context.ptt_key_down.store(false, Ordering::SeqCst);
+                if !context.auto_mode_state.is_active() {
+                    debug!("[Hotkey] PTT key released (flags changed)");
+                    let _ = context.sender.send(HotkeyEvent::PttReleased);
+                }
             }
         }
     }
@@ -347,17 +395,33 @@ extern "C" fn event_tap_callback(
             macos_ffi::CGEventGetIntegerValueField(event, macos_ffi::kCGKeyboardEventKeycode)
         } as u16;
 
-        if keycode == context.target_keycode {
-            if event_type == macos_ffi::kCGEventKeyDown {
-                let was_down = context.key_down.swap(true, Ordering::SeqCst);
+        // Check toggle key
+        if let Some(toggle_kc) = context.toggle_keycode {
+            if keycode == toggle_kc && event_type == macos_ffi::kCGEventKeyDown {
+                let was_down = context.toggle_key_down.swap(true, Ordering::SeqCst);
                 if !was_down {
+                    debug!("[Hotkey] Toggle key pressed (key down)");
+                    let _ = context.sender.send(HotkeyEvent::TogglePressed);
+                }
+            } else if keycode == toggle_kc && event_type == macos_ffi::kCGEventKeyUp {
+                context.toggle_key_down.store(false, Ordering::SeqCst);
+            }
+        }
+
+        // Check PTT key
+        if keycode == context.ptt_keycode {
+            if event_type == macos_ffi::kCGEventKeyDown {
+                let was_down = context.ptt_key_down.swap(true, Ordering::SeqCst);
+                if !was_down && !context.auto_mode_state.is_active() {
                     debug!("[Hotkey] PTT key pressed (key down)");
-                    let _ = context.sender.send(HotkeyEvent::Pressed);
+                    let _ = context.sender.send(HotkeyEvent::PttPressed);
                 }
             } else {
-                context.key_down.store(false, Ordering::SeqCst);
-                debug!("[Hotkey] PTT key released (key up)");
-                let _ = context.sender.send(HotkeyEvent::Released);
+                context.ptt_key_down.store(false, Ordering::SeqCst);
+                if !context.auto_mode_state.is_active() {
+                    debug!("[Hotkey] PTT key released (key up)");
+                    let _ = context.sender.send(HotkeyEvent::PttReleased);
+                }
             }
         }
     }

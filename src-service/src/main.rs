@@ -128,10 +128,12 @@ fn main() {
         let mut state = state.blocking_lock();
         state.transcription_mode = loaded_config.transcription_mode;
         state.ptt_hotkeys = loaded_config.ptt_hotkeys.clone();
+        state.auto_toggle_hotkeys = loaded_config.auto_toggle_hotkeys.clone();
         info!(
-            "Applied config: transcription_mode={:?}, ptt_hotkeys={} combination(s)",
+            "Applied config: transcription_mode={:?}, ptt_hotkeys={} combination(s), auto_toggle_hotkeys={} combination(s)",
             state.transcription_mode,
-            state.ptt_hotkeys.len()
+            state.ptt_hotkeys.len(),
+            state.auto_toggle_hotkeys.len()
         );
     }
 

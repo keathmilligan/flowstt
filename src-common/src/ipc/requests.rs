@@ -64,6 +64,15 @@ pub enum Request {
     },
     /// Get the current PTT status
     GetPttStatus,
+    /// Set the auto-mode toggle hotkeys
+    SetAutoToggleHotkeys {
+        /// The hotkey combinations to use for toggling auto mode
+        hotkeys: Vec<HotkeyCombination>,
+    },
+    /// Get the current auto-mode toggle hotkeys
+    GetAutoToggleHotkeys,
+    /// Toggle between Automatic and PushToTalk modes
+    ToggleAutoMode,
 
     // === Clipboard / Auto-Paste ===
     /// Enable or disable automatic paste after transcription

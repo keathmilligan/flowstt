@@ -5,7 +5,7 @@
 //! message-only window to receive WM_INPUT messages. Supports tracking multiple
 //! key combinations simultaneously.
 
-use super::backend::{HotkeyBackend, HotkeyEvent};
+use super::backend::{AutoModeState, HotkeyBackend, HotkeyEvent};
 use flowstt_common::{HotkeyCombination, KeyCode};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -302,6 +302,8 @@ pub struct WindowsHotkeyBackend {
     thread_id: Option<u32>,
     /// Last known unavailability reason
     unavailable_reason: Option<String>,
+    /// Auto mode state for PTT suppression (shared with message loop thread)
+    auto_mode_state: Arc<AutoModeState>,
 }
 
 impl WindowsHotkeyBackend {
@@ -312,17 +314,22 @@ impl WindowsHotkeyBackend {
             thread_handle: None,
             thread_id: None,
             unavailable_reason: None,
+            auto_mode_state: AutoModeState::shared(),
         }
     }
 }
 
 impl HotkeyBackend for WindowsHotkeyBackend {
-    fn start(&mut self, hotkeys: Vec<HotkeyCombination>) -> Result<(), String> {
+    fn start(
+        &mut self,
+        ptt_hotkeys: Vec<HotkeyCombination>,
+        toggle_hotkeys: Vec<HotkeyCombination>,
+    ) -> Result<(), String> {
         if self.running.load(Ordering::SeqCst) {
             return Err("Hotkey backend already running".to_string());
         }
 
-        if hotkeys.is_empty() {
+        if ptt_hotkeys.is_empty() && toggle_hotkeys.is_empty() {
             return Err("No hotkey combinations configured".to_string());
         }
 
@@ -331,6 +338,8 @@ impl HotkeyBackend for WindowsHotkeyBackend {
 
         let running = self.running.clone();
         running.store(true, Ordering::SeqCst);
+
+        let auto_mode_state = self.auto_mode_state.clone();
 
         // Channel to receive thread ID from the spawned thread
         let (tid_sender, tid_receiver) = mpsc::channel();
@@ -342,11 +351,18 @@ impl HotkeyBackend for WindowsHotkeyBackend {
             let _ = tid_sender.send(thread_id);
 
             info!(
-                "[Hotkey] Starting Windows Raw Input message loop for {} hotkey combination(s)",
-                hotkeys.len()
+                "[Hotkey] Starting Windows Raw Input message loop for {} PTT hotkey(s), {} toggle hotkey(s)",
+                ptt_hotkeys.len(),
+                toggle_hotkeys.len()
             );
 
-            if let Err(e) = run_message_loop(running.clone(), sender, hotkeys) {
+            if let Err(e) = run_message_loop(
+                running.clone(),
+                sender,
+                ptt_hotkeys,
+                toggle_hotkeys,
+                auto_mode_state,
+            ) {
                 error!("[Hotkey] Message loop error: {}", e);
             }
 
@@ -409,6 +425,11 @@ impl HotkeyBackend for WindowsHotkeyBackend {
     fn unavailable_reason(&self) -> Option<String> {
         self.unavailable_reason.clone()
     }
+
+    fn set_auto_mode_active(&mut self, active: bool) {
+        self.auto_mode_state.set_active(active);
+        debug!("[Hotkey] Auto mode PTT suppression: {}", active);
+    }
 }
 
 impl Drop for WindowsHotkeyBackend {
@@ -425,19 +446,27 @@ thread_local! {
 /// Context for hotkey event handling with combination tracking
 struct HotkeyContext {
     sender: Sender<HotkeyEvent>,
-    /// All configured hotkey combinations
-    hotkeys: Vec<HotkeyCombination>,
+    /// All configured PTT hotkey combinations
+    ptt_hotkeys: Vec<HotkeyCombination>,
+    /// Toggle hotkey combinations
+    toggle_hotkeys: Vec<HotkeyCombination>,
     /// Currently pressed keys
     pressed_keys: HashSet<KeyCode>,
-    /// Whether any combination is currently matched (PTT active)
-    any_matched: bool,
+    /// Whether any PTT combination is currently matched
+    any_ptt_matched: bool,
+    /// Whether any toggle combination is currently matched (to avoid repeat)
+    any_toggle_matched: bool,
+    /// Auto mode state for PTT suppression
+    auto_mode_state: Arc<AutoModeState>,
 }
 
 /// Run the Windows message loop on this thread
 fn run_message_loop(
     running: Arc<AtomicBool>,
     sender: Sender<HotkeyEvent>,
-    hotkeys: Vec<HotkeyCombination>,
+    ptt_hotkeys: Vec<HotkeyCombination>,
+    toggle_hotkeys: Vec<HotkeyCombination>,
+    auto_mode_state: Arc<AutoModeState>,
 ) -> Result<(), String> {
     unsafe {
         // Register window class.
@@ -493,9 +522,12 @@ fn run_message_loop(
         HOTKEY_CONTEXT.with(|ctx| {
             *ctx.borrow_mut() = Some(HotkeyContext {
                 sender,
-                hotkeys,
+                ptt_hotkeys,
+                toggle_hotkeys,
                 pressed_keys: HashSet::new(),
-                any_matched: false,
+                any_ptt_matched: false,
+                any_toggle_matched: false,
+                auto_mode_state,
             });
         });
 
@@ -606,21 +638,44 @@ unsafe fn handle_raw_input(hrawinput: HRAWINPUT) {
                 context.pressed_keys.insert(key_code);
             }
 
-            // Check if any combination is now matched
-            let now_matched = context
-                .hotkeys
+            // Check if any toggle hotkey is matched
+            let now_toggle_matched = context
+                .toggle_hotkeys
                 .iter()
                 .any(|combo| combo.is_subset_of(&context.pressed_keys));
 
-            // Emit events on state transitions
-            if now_matched && !context.any_matched {
-                context.any_matched = true;
-                info!("[PTT] Combination MATCHED - key DOWN");
-                let _ = context.sender.send(HotkeyEvent::Pressed);
-            } else if !now_matched && context.any_matched {
-                context.any_matched = false;
-                info!("[PTT] Combination RELEASED - key UP");
-                let _ = context.sender.send(HotkeyEvent::Released);
+            // Toggle on press only (not release), avoid repeat
+            if now_toggle_matched && !context.any_toggle_matched {
+                context.any_toggle_matched = true;
+                info!("[Hotkey] Toggle hotkey pressed");
+                let _ = context.sender.send(HotkeyEvent::TogglePressed);
+            } else if !now_toggle_matched && context.any_toggle_matched {
+                context.any_toggle_matched = false;
+            }
+
+            // Check if any PTT combination is now matched
+            let now_ptt_matched = context
+                .ptt_hotkeys
+                .iter()
+                .any(|combo| combo.is_subset_of(&context.pressed_keys));
+
+            // Emit PTT events on state transitions (unless suppressed)
+            let suppress_ptt = context.auto_mode_state.is_active();
+
+            if now_ptt_matched && !context.any_ptt_matched {
+                context.any_ptt_matched = true;
+                if !suppress_ptt {
+                    info!("[PTT] Combination MATCHED - key DOWN");
+                    let _ = context.sender.send(HotkeyEvent::PttPressed);
+                } else {
+                    debug!("[PTT] PTT suppressed (auto mode active)");
+                }
+            } else if !now_ptt_matched && context.any_ptt_matched {
+                context.any_ptt_matched = false;
+                if !suppress_ptt {
+                    info!("[PTT] Combination RELEASED - key UP");
+                    let _ = context.sender.send(HotkeyEvent::PttReleased);
+                }
             }
         }
     });

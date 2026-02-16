@@ -24,8 +24,12 @@ pub struct ServiceState {
     pub transcription_mode: TranscriptionMode,
     /// Configured push-to-talk hotkey combinations
     pub ptt_hotkeys: Vec<HotkeyCombination>,
+    /// Configured auto-mode toggle hotkeys
+    pub auto_toggle_hotkeys: Vec<HotkeyCombination>,
     /// Whether PTT key is currently pressed
     pub is_ptt_active: bool,
+    /// Whether auto mode is currently active (for PTT suppression)
+    pub auto_mode_active: bool,
 }
 
 impl ServiceState {

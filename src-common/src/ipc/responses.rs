@@ -102,6 +102,12 @@ pub enum EventType {
         mode: crate::types::TranscriptionMode,
     },
 
+    /// Auto mode toggled via hotkey
+    AutoModeToggled {
+        /// The new transcription mode
+        mode: crate::types::TranscriptionMode,
+    },
+
     /// A history entry was deleted
     HistoryEntryDeleted {
         /// The ID of the deleted entry

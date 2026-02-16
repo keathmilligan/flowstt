@@ -436,6 +436,9 @@ pub struct ConfigValues {
     pub transcription_mode: TranscriptionMode,
     /// Configured push-to-talk hotkey combinations
     pub ptt_hotkeys: Vec<HotkeyCombination>,
+    /// Configured auto-mode toggle hotkeys
+    #[serde(default)]
+    pub auto_toggle_hotkeys: Vec<HotkeyCombination>,
     /// Whether auto-paste into the foreground application is enabled
     #[serde(default = "default_auto_paste_enabled")]
     pub auto_paste_enabled: bool,
@@ -459,6 +462,12 @@ pub struct PttStatus {
     pub mode: TranscriptionMode,
     /// Configured PTT hotkey combinations
     pub hotkeys: Vec<HotkeyCombination>,
+    /// Configured auto-mode toggle hotkeys
+    #[serde(default)]
+    pub auto_toggle_hotkeys: Vec<HotkeyCombination>,
+    /// Whether auto mode is currently active
+    #[serde(default)]
+    pub auto_mode_active: bool,
     /// Whether PTT key is currently pressed
     pub is_active: bool,
     /// Whether PTT is available on this platform

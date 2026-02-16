@@ -31,6 +31,9 @@ pub struct Config {
     /// Configured push-to-talk hotkey combinations (new format)
     #[serde(default)]
     pub ptt_hotkeys: Vec<HotkeyCombination>,
+    /// Configured auto-mode toggle hotkeys
+    #[serde(default = "default_auto_toggle_hotkeys")]
+    pub auto_toggle_hotkeys: Vec<HotkeyCombination>,
     /// Whether auto-paste into the foreground application is enabled
     #[serde(default = "default_auto_paste_enabled")]
     pub auto_paste_enabled: bool,
@@ -40,6 +43,10 @@ pub struct Config {
     /// UI theme mode: auto (follow OS), light, or dark
     #[serde(default)]
     pub theme_mode: ThemeMode,
+}
+
+fn default_auto_toggle_hotkeys() -> Vec<HotkeyCombination> {
+    vec![]
 }
 
 fn default_auto_paste_enabled() -> bool {
@@ -59,6 +66,10 @@ struct LegacyConfig {
     ptt_key: Option<KeyCode>,
     /// New multi-hotkey field (may be present if already migrated)
     ptt_hotkeys: Option<Vec<HotkeyCombination>>,
+    /// Old single auto-toggle hotkey field (for migration)
+    auto_toggle_hotkey: Option<HotkeyCombination>,
+    /// New multi auto-toggle hotkeys field
+    auto_toggle_hotkeys: Option<Vec<HotkeyCombination>>,
     /// Whether auto-paste is enabled (may be absent in old configs)
     auto_paste_enabled: Option<bool>,
     /// Auto-paste delay in ms (may be absent in old configs)
@@ -137,6 +148,7 @@ impl Config {
         Self {
             transcription_mode: TranscriptionMode::default(),
             ptt_hotkeys: vec![HotkeyCombination::single(KeyCode::default())],
+            auto_toggle_hotkeys: vec![],
             auto_paste_enabled: true,
             auto_paste_delay_ms: 50,
             theme_mode: ThemeMode::default(),
@@ -160,9 +172,21 @@ impl Config {
             vec![HotkeyCombination::single(KeyCode::default())]
         };
 
+        // Handle auto_toggle_hotkeys migration
+        let auto_toggle_hotkeys = if let Some(hotkeys) = legacy.auto_toggle_hotkeys {
+            hotkeys
+        } else if let Some(hotkey) = legacy.auto_toggle_hotkey {
+            // Migrate from single hotkey to vec
+            vec![hotkey]
+        } else {
+            // Default to empty (no toggle hotkey)
+            vec![]
+        };
+
         Self {
             transcription_mode: legacy.transcription_mode,
             ptt_hotkeys,
+            auto_toggle_hotkeys,
             auto_paste_enabled: legacy.auto_paste_enabled.unwrap_or(true),
             auto_paste_delay_ms: legacy.auto_paste_delay_ms.unwrap_or(50),
             theme_mode: legacy.theme_mode.unwrap_or_default(),
@@ -180,6 +204,7 @@ mod tests {
         assert_eq!(config.transcription_mode, TranscriptionMode::default());
         assert_eq!(config.ptt_hotkeys.len(), 1);
         assert_eq!(config.ptt_hotkeys[0].keys, vec![KeyCode::default()]);
+        assert_eq!(config.auto_toggle_hotkeys.len(), 0);
     }
 
     #[test]
@@ -232,5 +257,24 @@ mod tests {
         assert_eq!(config.ptt_hotkeys.len(), 1);
         assert!(config.ptt_hotkeys[0].keys.contains(&KeyCode::LeftControl));
         assert!(config.ptt_hotkeys[0].keys.contains(&KeyCode::LeftAlt));
+    }
+
+    #[test]
+    fn test_legacy_auto_toggle_migration() {
+        let json = r#"{"auto_toggle_hotkey": {"keys": ["f14"]}}"#;
+        let legacy: LegacyConfig = serde_json::from_str(json).unwrap();
+        let config = Config::from_legacy(legacy);
+
+        assert_eq!(config.auto_toggle_hotkeys.len(), 1);
+        assert_eq!(config.auto_toggle_hotkeys[0].keys, vec![KeyCode::F14]);
+    }
+
+    #[test]
+    fn test_new_auto_toggle_hotkeys_format() {
+        let json = r#"{"auto_toggle_hotkeys": [{"keys": ["f13"]}, {"keys": ["f14"]}]}"#;
+        let legacy: LegacyConfig = serde_json::from_str(json).unwrap();
+        let config = Config::from_legacy(legacy);
+
+        assert_eq!(config.auto_toggle_hotkeys.len(), 2);
     }
 }

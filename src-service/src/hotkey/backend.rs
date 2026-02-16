@@ -1,14 +1,18 @@
 //! Platform-agnostic hotkey backend trait.
 
 use flowstt_common::HotkeyCombination;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Event emitted when hotkey state changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HotkeyEvent {
-    /// The hotkey was pressed
-    Pressed,
-    /// The hotkey was released
-    Released,
+    /// PTT hotkey was pressed
+    PttPressed,
+    /// PTT hotkey was released
+    PttReleased,
+    /// Toggle hotkey was pressed
+    TogglePressed,
 }
 
 /// Platform-agnostic hotkey backend interface.
@@ -23,7 +27,11 @@ pub trait HotkeyBackend: Send {
     /// - The platform doesn't support global hotkeys
     /// - Required permissions are not granted (e.g., Accessibility on macOS)
     /// - The backend is already running
-    fn start(&mut self, hotkeys: Vec<HotkeyCombination>) -> Result<(), String>;
+    fn start(
+        &mut self,
+        ptt_hotkeys: Vec<HotkeyCombination>,
+        toggle_hotkeys: Vec<HotkeyCombination>,
+    ) -> Result<(), String>;
 
     /// Stop monitoring for hotkey events.
     fn stop(&mut self);
@@ -42,4 +50,40 @@ pub trait HotkeyBackend: Send {
 
     /// Get a description of why hotkeys are unavailable, if applicable.
     fn unavailable_reason(&self) -> Option<String>;
+
+    /// Set whether auto mode is active (affects PTT event suppression).
+    /// When auto mode is active, PTT events are suppressed but toggle events are not.
+    fn set_auto_mode_active(&mut self, active: bool);
+}
+
+/// Shared state for PTT suppression across threads.
+pub struct AutoModeState {
+    /// Whether auto mode is currently active
+    pub is_active: AtomicBool,
+}
+
+impl AutoModeState {
+    pub fn new() -> Self {
+        Self {
+            is_active: AtomicBool::new(false),
+        }
+    }
+
+    pub fn shared() -> Arc<Self> {
+        Arc::new(Self::new())
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.is_active.load(Ordering::SeqCst)
+    }
+
+    pub fn set_active(&self, active: bool) {
+        self.is_active.store(active, Ordering::SeqCst);
+    }
+}
+
+impl Default for AutoModeState {
+    fn default() -> Self {
+        Self::new()
+    }
 }

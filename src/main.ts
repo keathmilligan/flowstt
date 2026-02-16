@@ -68,6 +68,7 @@ let transcriptionCompleteUnlisten: UnlistenFn | null = null;
 let transcriptionErrorUnlisten: UnlistenFn | null = null;
 let captureStateChangedUnlisten: UnlistenFn | null = null;
 let historyEntryDeletedUnlisten: UnlistenFn | null = null;
+let autoModeToggledUnlisten: UnlistenFn | null = null;
 
 let miniWaveformRenderer: MiniWaveformRenderer | null = null;
 
@@ -169,6 +170,15 @@ async function setupEventListeners() {
       removeHistorySegmentFromDOM(event.payload);
     });
   }
+
+  // Auto mode toggled (via toggle hotkey)
+  if (!autoModeToggledUnlisten) {
+    autoModeToggledUnlisten = await listen<TranscriptionMode>("auto-mode-toggled", (event) => {
+      const mode = event.payload;
+      console.log(`[Main] Auto mode toggled to: ${mode}`);
+      // The config window will handle updating its own UI via its own listener
+    });
+  }
 }
 
 function cleanupEventListeners() {
@@ -186,6 +196,9 @@ function cleanupEventListeners() {
   
   historyEntryDeletedUnlisten?.();
   historyEntryDeletedUnlisten = null;
+
+  autoModeToggledUnlisten?.();
+  autoModeToggledUnlisten = null;
 }
 
 // ============== History Display ==============

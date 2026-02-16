@@ -85,6 +85,9 @@ pub fn broadcast_event(event: Response) {
                 EventType::HistoryEntryDeleted { ref id } => {
                     info!("History entry deleted (no clients): {}", id);
                 }
+                EventType::AutoModeToggled { mode } => {
+                    info!("Auto mode toggled (no clients): {:?}", mode);
+                }
                 EventType::Shutdown => {
                     info!("Shutdown event (no clients)");
                 }

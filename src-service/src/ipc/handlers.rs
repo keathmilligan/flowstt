@@ -72,6 +72,7 @@ pub async fn start_capture() -> Result<(), String> {
     let recording_mode = state.recording_mode;
     let transcription_mode = state.transcription_mode;
     let ptt_hotkeys = state.ptt_hotkeys.clone();
+    let auto_toggle_hotkeys = state.auto_toggle_hotkeys.clone();
 
     // Drop the lock before doing expensive operations
     drop(state);
@@ -81,7 +82,7 @@ pub async fn start_capture() -> Result<(), String> {
         // Audio will be started/stopped when the hotkey is pressed/released
 
         // Start hotkey backend
-        if let Err(e) = hotkey::start_hotkey(ptt_hotkeys.clone()) {
+        if let Err(e) = hotkey::start_hotkey(ptt_hotkeys.clone(), auto_toggle_hotkeys.clone()) {
             return Err(format!("Failed to start PTT hotkey monitoring: {}", e));
         }
         info!(
@@ -114,6 +115,33 @@ pub async fn start_capture() -> Result<(), String> {
         Ok(())
     } else {
         // Automatic mode: Start continuous audio capture with VAD
+        // Also start hotkey backend for toggle hotkey support
+
+        // Start hotkey backend (with toggle hotkeys, empty PTT hotkeys)
+        // Only start if toggle hotkeys are configured
+        if !auto_toggle_hotkeys.is_empty() {
+            if let Err(e) = hotkey::start_hotkey(vec![], auto_toggle_hotkeys.clone()) {
+                warn!("Failed to start toggle hotkey monitoring: {}", e);
+            } else {
+                info!(
+                    "Toggle hotkey monitoring started for {} combination(s)",
+                    auto_toggle_hotkeys.len()
+                );
+            }
+
+            // Start PTT controller to handle toggle events (it handles both PTT and toggle)
+            if let Err(e) = ptt_controller::start_ptt_controller() {
+                warn!("Failed to start PTT controller for toggle handling: {}", e);
+            }
+        }
+
+        // Set auto mode active for hotkey backend
+        hotkey::set_auto_mode_active(true);
+        {
+            let state_arc = get_service_state();
+            let mut state = state_arc.lock().await;
+            state.auto_mode_active = true;
+        }
 
         // Get sample rate from backend
         let sample_rate = platform::get_backend()
@@ -361,6 +389,7 @@ pub async fn handle_request(request: Request) -> Response {
             Response::ConfigValues(ConfigValues {
                 transcription_mode: state.transcription_mode,
                 ptt_hotkeys: state.ptt_hotkeys.clone(),
+                auto_toggle_hotkeys: state.auto_toggle_hotkeys.clone(),
                 auto_paste_enabled: config.auto_paste_enabled,
                 auto_paste_delay_ms: config.auto_paste_delay_ms,
             })
@@ -465,9 +494,10 @@ pub async fn handle_request(request: Request) -> Response {
 
         Request::SetPushToTalkHotkeys { hotkeys } => {
             let state_arc = get_service_state();
-            let (old_hotkeys, transcription_mode, is_ptt_monitoring) = {
+            let (old_hotkeys, old_toggle, transcription_mode, is_ptt_monitoring) = {
                 let mut state = state_arc.lock().await;
                 let old_hotkeys = state.ptt_hotkeys.clone();
+                let old_toggle = state.auto_toggle_hotkeys.clone();
                 state.ptt_hotkeys = hotkeys.clone();
                 // The hotkey backend runs whenever the PTT controller is
                 // active, regardless of whether audio is currently capturing
@@ -475,7 +505,7 @@ pub async fn handle_request(request: Request) -> Response {
                 let is_ptt_monitoring =
                     state.transcription_mode == TranscriptionMode::PushToTalk
                         && ptt_controller::is_ptt_controller_running();
-                (old_hotkeys, state.transcription_mode, is_ptt_monitoring)
+                (old_hotkeys, old_toggle, state.transcription_mode, is_ptt_monitoring)
             };
 
             info!(
@@ -488,12 +518,12 @@ pub async fn handle_request(request: Request) -> Response {
             // If PTT monitoring is active, restart hotkey with new combinations
             if is_ptt_monitoring {
                 hotkey::stop_hotkey();
-                if let Err(e) = hotkey::start_hotkey(hotkeys.clone()) {
+                if let Err(e) = hotkey::start_hotkey(hotkeys.clone(), old_toggle.clone()) {
                     // Revert on failure
                     warn!("Failed to start hotkey with new combinations: {}", e);
                     let mut state = state_arc.lock().await;
                     state.ptt_hotkeys = old_hotkeys.clone();
-                    let _ = hotkey::start_hotkey(old_hotkeys);
+                    let _ = hotkey::start_hotkey(old_hotkeys, old_toggle);
                     return Response::error(format!("Failed to set hotkeys: {}", e));
                 }
             }
@@ -524,10 +554,106 @@ pub async fn handle_request(request: Request) -> Response {
             Response::PttStatus(PttStatus {
                 mode: state.transcription_mode,
                 hotkeys: state.ptt_hotkeys.clone(),
+                auto_toggle_hotkeys: state.auto_toggle_hotkeys.clone(),
+                auto_mode_active: state.auto_mode_active,
                 is_active: state.is_ptt_active,
                 available,
                 error,
             })
+        }
+
+        Request::SetAutoToggleHotkeys { hotkeys } => {
+            let state_arc = get_service_state();
+            let (ptt_hotkeys, _transcription_mode, is_ptt_monitoring) = {
+                let mut state = state_arc.lock().await;
+                let _old_toggle = state.auto_toggle_hotkeys.clone();
+                state.auto_toggle_hotkeys = hotkeys.clone();
+                let is_ptt_monitoring =
+                    state.transcription_mode == TranscriptionMode::PushToTalk
+                        && ptt_controller::is_ptt_controller_running();
+                (state.ptt_hotkeys.clone(), state.transcription_mode, is_ptt_monitoring)
+            };
+
+            info!("Auto-toggle hotkeys set: {} combination(s)", hotkeys.len());
+
+            // If PTT monitoring is active, restart hotkey backend with new toggle hotkeys
+            if is_ptt_monitoring {
+                hotkey::stop_hotkey();
+                if let Err(e) = hotkey::start_hotkey(ptt_hotkeys, hotkeys.clone()) {
+                    warn!("Failed to restart hotkey with new toggle: {}", e);
+                }
+            }
+
+            // Save config
+            let mut config = crate::config::Config::load();
+            config.auto_toggle_hotkeys = hotkeys;
+            if let Err(e) = crate::config::save_config(&config) {
+                warn!("Failed to save config: {}", e);
+            }
+
+            Response::Ok
+        }
+
+        Request::GetAutoToggleHotkeys => {
+            let state_arc = get_service_state();
+            let state = state_arc.lock().await;
+            Response::ConfigValues(ConfigValues {
+                transcription_mode: state.transcription_mode,
+                ptt_hotkeys: state.ptt_hotkeys.clone(),
+                auto_toggle_hotkeys: state.auto_toggle_hotkeys.clone(),
+                auto_paste_enabled: true,
+                auto_paste_delay_ms: 50,
+            })
+        }
+
+        Request::ToggleAutoMode => {
+            let state_arc = get_service_state();
+            let (current_mode, auto_mode_active, _ptt_hotkeys, _toggle_hotkeys) = {
+                let state = state_arc.lock().await;
+                (
+                    state.transcription_mode,
+                    state.auto_mode_active,
+                    state.ptt_hotkeys.clone(),
+                    state.auto_toggle_hotkeys.clone(),
+                )
+            };
+
+            let (new_mode, new_auto_active) = if auto_mode_active {
+                (TranscriptionMode::PushToTalk, false)
+            } else {
+                (TranscriptionMode::Automatic, true)
+            };
+
+            info!("ToggleAutoMode: {:?} -> {:?}", current_mode, new_mode);
+
+            // If currently recording in PTT mode, finalize first
+            if ptt_controller::is_ptt_active() {
+                // Signal to stop PTT recording
+                // The toggle handler will handle this
+            }
+
+            // Update state
+            {
+                let mut state = state_arc.lock().await;
+                state.transcription_mode = new_mode;
+                state.auto_mode_active = new_auto_active;
+                state.is_ptt_active = false;
+                hotkey::set_auto_mode_active(new_auto_active);
+            }
+
+            // Save config
+            let mut config = crate::config::Config::load();
+            config.transcription_mode = new_mode;
+            if let Err(e) = crate::config::save_config(&config) {
+                warn!("Failed to save config: {}", e);
+            }
+
+            // Broadcast event
+            broadcast_event(Response::Event {
+                event: EventType::AutoModeToggled { mode: new_mode },
+            });
+
+            Response::Ok
         }
 
         Request::GetCudaStatus => {

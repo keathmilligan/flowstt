@@ -331,6 +331,9 @@ fn forward_event_to_tauri(app_handle: &AppHandle, event: EventType) {
         EventType::TranscriptionModeChanged { mode } => {
             let _ = app_handle.emit("transcription-mode-changed", mode);
         }
+        EventType::AutoModeToggled { mode } => {
+            let _ = app_handle.emit("auto-mode-toggled", mode);
+        }
         EventType::HistoryEntryDeleted { id } => {
             let _ = app_handle.emit("history-entry-deleted", id);
         }

@@ -3,22 +3,29 @@
 //! This is a placeholder implementation. Full Linux support using
 //! X11/XCB or libinput will be implemented in a future release.
 
-use super::backend::{HotkeyBackend, HotkeyEvent};
+use super::backend::{AutoModeState, HotkeyBackend, HotkeyEvent};
 use flowstt_common::HotkeyCombination;
+use std::sync::Arc;
 
 /// Linux hotkey backend (stub implementation)
 pub struct LinuxHotkeyBackend {
-    _private: (),
+    auto_mode_state: Arc<AutoModeState>,
 }
 
 impl LinuxHotkeyBackend {
     pub fn new() -> Self {
-        Self { _private: () }
+        Self {
+            auto_mode_state: AutoModeState::shared(),
+        }
     }
 }
 
 impl HotkeyBackend for LinuxHotkeyBackend {
-    fn start(&mut self, _hotkeys: Vec<HotkeyCombination>) -> Result<(), String> {
+    fn start(
+        &mut self,
+        _ptt_hotkeys: Vec<HotkeyCombination>,
+        _toggle_hotkeys: Vec<HotkeyCombination>,
+    ) -> Result<(), String> {
         Err("Push-to-talk is not yet available on Linux. This feature will be implemented in a future release.".to_string())
     }
 
@@ -40,5 +47,9 @@ impl HotkeyBackend for LinuxHotkeyBackend {
 
     fn unavailable_reason(&self) -> Option<String> {
         Some("Push-to-talk is not yet available on Linux".to_string())
+    }
+
+    fn set_auto_mode_active(&mut self, _active: bool) {
+        // No-op for stub
     }
 }

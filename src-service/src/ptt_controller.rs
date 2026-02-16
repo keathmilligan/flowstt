@@ -4,6 +4,7 @@
 //! - In PTT mode, audio capture is only active while the hotkey is held
 //! - Polls for hotkey events independently of audio loop
 //! - Starts/stops audio capture on key press/release
+//! - Handles toggle hotkey for switching between modes
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -11,11 +12,13 @@ use std::thread;
 use std::time::Duration;
 
 use flowstt_common::ipc::{EventType, Response};
+use flowstt_common::TranscriptionMode;
 use tracing::{debug, error, info};
 
+use crate::audio_loop::{self, is_audio_loop_active};
 use crate::hotkey::{self, HotkeyEvent};
 use crate::ipc::broadcast_event;
-use crate::ipc::handlers::get_transcribe_state;
+use crate::ipc::handlers::{get_transcribe_state, get_transcription_queue};
 use crate::platform;
 use crate::processor::{VisualizationCallback, VisualizationPayload, VisualizationProcessor};
 use crate::state::get_service_state;
@@ -89,11 +92,14 @@ fn ptt_controller_loop() {
         // Check for hotkey events
         if let Some(event) = hotkey::try_recv_hotkey() {
             match event {
-                HotkeyEvent::Pressed => {
+                HotkeyEvent::PttPressed => {
                     handle_ptt_pressed();
                 }
-                HotkeyEvent::Released => {
+                HotkeyEvent::PttReleased => {
                     handle_ptt_released();
+                }
+                HotkeyEvent::TogglePressed => {
+                    handle_toggle_pressed();
                 }
             }
         }
@@ -206,6 +212,181 @@ fn handle_ptt_released() {
             error: None,
         },
     });
+}
+
+/// Handle toggle hotkey press - switch between Automatic and PTT modes
+fn handle_toggle_pressed() {
+    info!("[Toggle] Toggle hotkey pressed");
+
+    let state_arc = get_service_state();
+    let (
+        current_mode,
+        auto_mode_active,
+        _ptt_hotkeys,
+        _toggle_hotkeys,
+        source1_id,
+        source2_id,
+        aec_enabled,
+        recording_mode,
+    ) = {
+        let state = futures::executor::block_on(state_arc.lock());
+        (
+            state.transcription_mode,
+            state.auto_mode_active,
+            state.ptt_hotkeys.clone(),
+            state.auto_toggle_hotkeys.clone(),
+            state.source1_id.clone(),
+            state.source2_id.clone(),
+            state.aec_enabled,
+            state.recording_mode,
+        )
+    };
+
+    // Determine new mode
+    let (new_mode, new_auto_active) = if auto_mode_active {
+        // Currently in auto mode via toggle -> switch to PTT mode
+        (TranscriptionMode::PushToTalk, false)
+    } else {
+        // Currently in PTT mode -> switch to auto mode
+        (TranscriptionMode::Automatic, true)
+    };
+
+    info!(
+        "[Toggle] Switching from {:?} to {:?}",
+        current_mode, new_mode
+    );
+
+    // If currently recording in PTT mode, finalize the segment first
+    if get_ptt_active().load(Ordering::SeqCst) {
+        info!("[Toggle] Finalizing active PTT segment before mode switch");
+        get_ptt_active().store(false, Ordering::SeqCst);
+
+        let transcribe_state = get_transcribe_state();
+        if let Ok(mut transcribe) = transcribe_state.try_lock() {
+            if transcribe.in_speech {
+                let _ = transcribe.on_speech_ended();
+            }
+        }
+        stop_ptt_capture();
+    }
+
+    // Stop any existing audio loop and capture
+    audio_loop::stop_audio_loop();
+    if let Some(backend) = platform::get_backend() {
+        let _ = backend.stop_capture();
+    }
+
+    // Update state
+    {
+        let state_arc = get_service_state();
+        let mut state = futures::executor::block_on(state_arc.lock());
+        state.transcription_mode = new_mode;
+        state.auto_mode_active = new_auto_active;
+        state.is_ptt_active = false;
+        state.transcribe_status.capturing = false;
+        state.transcribe_status.in_speech = false;
+
+        // Update auto mode suppression in hotkey backend
+        hotkey::set_auto_mode_active(new_auto_active);
+    }
+
+    // Save config
+    let mut config = crate::config::Config::load();
+    config.transcription_mode = new_mode;
+    if let Err(e) = crate::config::save_config(&config) {
+        error!("[Toggle] Failed to save config: {}", e);
+    }
+
+    // Broadcast toggle event
+    broadcast_event(Response::Event {
+        event: EventType::AutoModeToggled { mode: new_mode },
+    });
+
+    // Start capture for the new mode
+    if new_mode == TranscriptionMode::Automatic {
+        // Start continuous capture with VAD
+        info!("[Toggle] Starting Automatic mode capture");
+
+        let has_source = source1_id.is_some();
+        if !has_source {
+            error!("[Toggle] No audio source configured");
+            broadcast_event(Response::Event {
+                event: EventType::CaptureStateChanged {
+                    capturing: false,
+                    error: Some("No audio source configured".to_string()),
+                },
+            });
+            return;
+        }
+
+        // Get sample rate from backend
+        let sample_rate = platform::get_backend()
+            .map(|b| b.sample_rate())
+            .unwrap_or(48000);
+
+        // Initialize transcribe state
+        {
+            let transcribe_state = get_transcribe_state();
+            let mut transcribe = transcribe_state.lock().unwrap();
+            transcribe.init_for_capture(sample_rate, 2);
+            transcribe.activate();
+        }
+
+        // Start capture
+        if let Some(backend) = platform::get_backend() {
+            backend.set_aec_enabled(aec_enabled);
+            backend.set_recording_mode(recording_mode);
+
+            if let Err(e) = backend.start_capture_sources(source1_id, source2_id) {
+                error!("[Toggle] Failed to start capture: {}", e);
+                broadcast_event(Response::Event {
+                    event: EventType::CaptureStateChanged {
+                        capturing: false,
+                        error: Some(e),
+                    },
+                });
+                return;
+            }
+        }
+
+        // Start audio processing loop
+        if !is_audio_loop_active() {
+            let queue = get_transcription_queue();
+            let transcribe_state = get_transcribe_state();
+            if let Err(e) = audio_loop::start_audio_loop(queue, transcribe_state) {
+                error!("[Toggle] Failed to start audio loop: {}", e);
+            }
+        }
+
+        // Update state
+        {
+            let state_arc = get_service_state();
+            let mut state = futures::executor::block_on(state_arc.lock());
+            state.transcribe_status.capturing = true;
+            state.transcribe_status.error = None;
+        }
+
+        broadcast_event(Response::Event {
+            event: EventType::CaptureStateChanged {
+                capturing: true,
+                error: None,
+            },
+        });
+
+        info!("[Toggle] Automatic mode capture started");
+    } else {
+        // PTT mode - just ready state, capture happens on hotkey press
+        info!("[Toggle] PTT mode ready - waiting for hotkey press");
+
+        broadcast_event(Response::Event {
+            event: EventType::CaptureStateChanged {
+                capturing: false,
+                error: None,
+            },
+        });
+    }
+
+    info!("[Toggle] Mode switched to {:?}", new_mode);
 }
 
 /// Start audio capture for PTT session
