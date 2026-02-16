@@ -603,8 +603,20 @@ window.addEventListener("DOMContentLoaded", () => {
     cleanupEventListeners();
   });
 
-  // Handle visibility change - no special handling needed for history segments
-  // since DOM updates persist correctly even when the window is hidden
+  // When the window becomes visible (e.g., after the setup wizard completes),
+  // re-check model and capture status since they may have changed while hidden.
+  document.addEventListener("visibilitychange", async () => {
+    if (!document.hidden) {
+      checkModelStatus();
+      checkCudaStatus();
+      try {
+        const status = await invoke<CaptureStatus>("get_status");
+        isCapturing = status.capturing;
+      } catch {
+        // Ignore - service may not be ready
+      }
+    }
+  });
 
   // Initialize app
   initializeApp();
@@ -632,10 +644,21 @@ async function initializeApp() {
   } catch (error) {
     startupLog(`connect_events FAILED (+${elapsed()}): ${error}`);
     console.error(`Connection error: ${error}`);
-    // Show window even on error so the user can see the error message
-    const mainWindow = getCurrentWindow();
-    await mainWindow.show();
-    await mainWindow.setFocus();
+    // Show window even on error so the user can see the error message,
+    // but only if the setup wizard is not active.
+    try {
+      const setupActive = await invoke<boolean>("needs_setup");
+      if (!setupActive) {
+        const mainWindow = getCurrentWindow();
+        await mainWindow.show();
+        await mainWindow.setFocus();
+      }
+    } catch {
+      // If we can't check, show anyway
+      const mainWindow = getCurrentWindow();
+      await mainWindow.show();
+      await mainWindow.setFocus();
+    }
     return;
   }
   
@@ -655,26 +678,53 @@ async function initializeApp() {
     startupLog(`get_status FAILED (+${elapsed()}): ${error}`);
   }
 
-  checkModelStatus();
-  checkCudaStatus();
+  // Check if the setup wizard is active. If so, skip model/status checks
+  // (the wizard handles all of that) and wait for setup-complete instead.
+  const setupActive = await invoke<boolean>("needs_setup");
 
-  // Load transcription history from service
-  await loadHistory();
-  startupLog(`loadHistory done (+${elapsed()})`);
+  if (!setupActive) {
+    checkModelStatus();
+    checkCudaStatus();
 
-  // If capturing, show and start waveform renderer
-  if (isCapturing) {
-    if (miniWaveformCanvas) miniWaveformCanvas.style.display = "block";
-    miniWaveformRenderer?.resize();
-    miniWaveformRenderer?.clear();
-    miniWaveformRenderer?.start();
+    // Load transcription history from service
+    await loadHistory();
+    startupLog(`loadHistory done (+${elapsed()})`);
+
+    // If capturing, show and start waveform renderer
+    if (isCapturing) {
+      if (miniWaveformCanvas) miniWaveformCanvas.style.display = "block";
+      miniWaveformRenderer?.resize();
+      miniWaveformRenderer?.clear();
+      miniWaveformRenderer?.start();
+    }
+
+    // Show the main window
+    const mainWindow = getCurrentWindow();
+    await mainWindow.show();
+    await mainWindow.setFocus();
+    startupLog(`window shown - startup complete (+${elapsed()})`);
+  } else {
+    startupLog(`setup wizard active - main window stays hidden (+${elapsed()})`);
+
+    // When setup completes, the Rust setup() hook shows this window.
+    // Re-check everything since the wizard configured the model, device, and mode.
+    await listen("setup-complete", async () => {
+      startupLog("setup-complete received - refreshing state");
+      await checkModelStatus();
+      await checkCudaStatus();
+      try {
+        const status = await invoke<CaptureStatus>("get_status");
+        isCapturing = status.capturing;
+        if (isCapturing) {
+          if (miniWaveformCanvas) miniWaveformCanvas.style.display = "block";
+          miniWaveformRenderer?.resize();
+          miniWaveformRenderer?.clear();
+          miniWaveformRenderer?.start();
+        }
+      } catch {
+        // Ignore
+      }
+      await loadHistory();
+    });
   }
-
-  // Show the main window now that the UI is fully initialized and connected.
-  // The window starts hidden (visible: false in tauri.conf.json) to avoid
-  // showing a blank/unresponsive window while waiting for the service connection.
-  const mainWindow = getCurrentWindow();
-  await mainWindow.show();
-  await mainWindow.setFocus();
-  startupLog(`window shown - startup complete (+${elapsed()})`);
 }

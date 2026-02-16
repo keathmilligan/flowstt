@@ -73,6 +73,15 @@ pub fn broadcast_event(event: Response) {
                 EventType::ModelDownloadComplete { success } => {
                     info!("Model download complete (no clients): success={}", success);
                 }
+                EventType::AudioLevelUpdate {
+                    ref device_id,
+                    level_db,
+                } => {
+                    debug!(
+                        "Audio level update (no clients): device={}, level={:.1}dB",
+                        device_id, level_db
+                    );
+                }
                 EventType::HistoryEntryDeleted { ref id } => {
                     info!("History entry deleted (no clients): {}", id);
                 }

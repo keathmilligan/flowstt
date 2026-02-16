@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowSTT Setup</title>
+    <link rel="stylesheet" href="/src/setup.css">
+</head>
+<body>
+    <div class="setup-container" data-tauri-drag-region>
+        <button class="close-btn" id="close-btn" title="Close">&times;</button>
+
+        <div class="setup-header" data-tauri-drag-region>
+            <img src="/src/assets/flowstt-landscape.svg" alt="FlowSTT" class="setup-logo" />
+            <div class="step-indicator" id="step-indicator">
+                <div class="step-dot active" data-step="1"></div>
+                <div class="step-line"></div>
+                <div class="step-dot" data-step="2"></div>
+                <div class="step-line"></div>
+                <div class="step-dot" data-step="3"></div>
+                <div class="step-line"></div>
+                <div class="step-dot" data-step="4"></div>
+            </div>
+        </div>
+
+        <div class="setup-content" id="setup-content" data-tauri-drag-region>
+            <!-- Step 1: Model Download -->
+            <div class="step" id="step-1">
+                <h2 class="step-title">Download Speech Model</h2>
+                <p class="step-desc">FlowSTT needs the Whisper speech recognition model to transcribe audio. This is a one-time download (~145 MB).</p>
+                <div class="model-download-area">
+                    <div id="download-status" class="download-status">
+                        <span id="download-label">Ready to download</span>
+                    </div>
+                    <div class="progress-bar-container hidden" id="progress-container">
+                        <div class="progress-bar" id="progress-bar"></div>
+                        <span class="progress-text" id="progress-text">0%</span>
+                    </div>
+                    <button id="download-btn" class="btn btn-primary">Download Model</button>
+                </div>
+            </div>
+
+            <!-- Step 2: Audio Device Selection -->
+            <div class="step hidden" id="step-2">
+                <h2 class="step-title">Select Microphone</h2>
+                <p class="step-desc">Choose the microphone you want to use for transcription. Speak to test that it's picking up your voice.</p>
+                <div class="device-list-area">
+                    <div id="device-list" class="device-list">
+                        <div class="device-loading">Loading devices...</div>
+                    </div>
+                </div>
+                <div class="level-meter-section hidden" id="level-meter-section">
+                    <div class="level-meter-container">
+                        <div class="level-meter">
+                            <div class="level-meter-fill" id="level-meter-fill"></div>
+                        </div>
+                        <span class="level-label" id="level-label">Speak to test...</span>
+                    </div>
+                </div>
+                <div class="system-audio-section">
+                    <label class="field-label">System Audio (optional)</label>
+                    <select id="system-device-select">
+                        <option value="">None</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Step 3: Transcription Mode -->
+            <div class="step hidden" id="step-3">
+                <h2 class="step-title">Transcription Mode</h2>
+                <p class="step-desc">How do you want FlowSTT to listen?</p>
+                <div class="mode-options">
+                    <label class="mode-option" id="mode-automatic">
+                        <input type="radio" name="mode" value="automatic">
+                        <div class="mode-card">
+                            <strong>Automatic</strong>
+                            <span>Always listening. Transcription starts and stops when you speak.</span>
+                        </div>
+                    </label>
+                    <label class="mode-option" id="mode-ptt">
+                        <input type="radio" name="mode" value="push_to_talk" checked>
+                        <div class="mode-card">
+                            <strong>Push-to-Talk</strong>
+                            <span>Hold a key to transcribe. Nothing is captured when the key is released.</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="hotkey-section" id="hotkey-section">
+                    <label class="field-label">Push-to-Talk Key</label>
+                    <div class="hotkey-display" id="hotkey-display">
+                        <span id="hotkey-label">Right Alt</span>
+                        <button id="change-hotkey-btn" class="btn btn-secondary btn-small">Change</button>
+                    </div>
+                    <div id="hotkey-recorder" class="hotkey-recorder hidden">
+                        <span id="recorder-status">Press a key...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4: Test Verification -->
+            <div class="step hidden" id="step-4">
+                <h2 class="step-title">Test Your Setup</h2>
+                <p class="step-desc" id="test-instructions">Press and hold <strong>Right Alt</strong>, then speak to verify everything works.</p>
+                <div class="test-area">
+                    <div class="test-result" id="test-result">
+                        <p class="test-placeholder">Transcribed text will appear here...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="setup-footer" data-tauri-drag-region>
+            <a href="#" class="skip-link" id="skip-link">Skip Setup</a>
+            <div class="nav-buttons">
+                <button id="back-btn" class="btn btn-secondary hidden">Back</button>
+                <button id="next-btn" class="btn btn-primary" disabled>Next</button>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="/src/setup.ts"></script>
+</body>
+</html>

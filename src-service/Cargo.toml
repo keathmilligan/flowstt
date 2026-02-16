@@ -29,7 +29,7 @@ flowstt-common = { path = "../src-common" }
 libloading = "0.8"
 
 # HTTP client for model downloading
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.12", features = ["blocking", "stream"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

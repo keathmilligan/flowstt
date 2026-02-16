@@ -14,6 +14,7 @@ mod platform;
 mod processor;
 mod ptt_controller;
 mod state;
+mod test_capture;
 mod transcription;
 
 pub use audio_loop::{
@@ -169,17 +170,25 @@ fn main() {
             error!("Failed to initialize audio backend: {}", e);
         }
 
-        // Initialize hotkey backend (non-fatal if unavailable)
-        info!("Initializing hotkey backend...");
-        if let Err(e) = hotkey::init_hotkey_backend() {
-            info!("Hotkey backend not available: {}", e);
-        }
-
         // Initialize transcription system (worker ready to process segments)
         ipc::handlers::init_transcription_system();
 
-        // Auto-configure default audio source and start capture immediately
-        {
+        // During first-time setup, skip hotkey initialization and auto-capture
+        // entirely. The setup wizard will explicitly start capture (and thus
+        // hotkey listening) only when the user reaches the test page.
+        let first_run = flowstt_common::config::Config::needs_setup();
+
+        if !first_run {
+            // Initialize hotkey backend (non-fatal if unavailable)
+            info!("Initializing hotkey backend...");
+            if let Err(e) = hotkey::init_hotkey_backend() {
+                info!("Hotkey backend not available: {}", e);
+            }
+        }
+
+        // Auto-configure default audio source and start capture immediately,
+        // but only if first-time setup is already complete.
+        if !first_run {
             let state_arc = state::get_service_state();
 
             // Get default input device
@@ -208,6 +217,8 @@ fn main() {
             } else {
                 warn!("No audio input devices found; waiting for client to configure via SetSources");
             }
+        } else {
+            info!("First-time setup pending; skipping auto-capture (waiting for setup wizard)");
         }
 
         info!("Service initialization complete");

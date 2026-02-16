@@ -128,6 +128,15 @@ impl Config {
         Ok(())
     }
 
+    /// Check if first-time setup is needed.
+    ///
+    /// Returns `true` when no config file exists on disk, indicating the user
+    /// has never completed setup. This is used by the GUI to show the setup
+    /// wizard on first launch.
+    pub fn needs_setup() -> bool {
+        !Self::config_path().exists()
+    }
+
     /// Create a default config with the default hotkey binding.
     pub fn default_with_hotkeys() -> Self {
         Self {

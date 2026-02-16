@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use colored::Colorize;
 use flowstt_common::config::Config;
 use flowstt_common::ipc::{EventType, Request, Response};
-use flowstt_common::{AudioSourceType, ConfigValues, HotkeyCombination, RecordingMode, TranscriptionMode};
+use flowstt_common::{AudioSourceType, ConfigValues, HotkeyCombination, KeyCode, RecordingMode, TranscriptionMode};
 
 use client::Client;
 
@@ -91,6 +91,9 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+
+    /// Run interactive first-time setup wizard
+    Setup,
 
     /// Ping the service
     Ping,
@@ -201,6 +204,11 @@ async fn run(cli: Cli) -> Result<(), CliError> {
     // Handle config commands (can work offline)
     if let Commands::Config { ref action } = cli.command {
         return handle_config(&mut client, action, &cli).await;
+    }
+
+    // Handle setup command
+    if matches!(cli.command, Commands::Setup) {
+        return handle_setup(&mut client, &cli).await;
     }
 
     // Connect to service (spawn if needed)
@@ -580,6 +588,11 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             }
         }
 
+        Commands::Setup => {
+            // Already handled above
+            unreachable!()
+        }
+
         Commands::Config { .. } => {
             // Already handled above
             unreachable!()
@@ -819,6 +832,220 @@ async fn handle_config_set(
         }
         _ => unreachable!(), // validate_config_key already checked
     }
+
+    Ok(())
+}
+
+/// Handle the `setup` interactive wizard command.
+async fn handle_setup(client: &mut Client, _cli: &Cli) -> Result<(), CliError> {
+    use std::io::{self, BufRead, IsTerminal, Write};
+
+    // TTY detection
+    if !std::io::stdin().is_terminal() {
+        return Err(CliError::new(
+            "Setup requires an interactive terminal (TTY)",
+            1,
+        ));
+    }
+
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+
+    // Check if already configured
+    if !Config::needs_setup() {
+        print!(
+            "{}: Setup has already been completed. Run again? [y/N] ",
+            "Warning".yellow().bold()
+        );
+        stdout.flush().unwrap();
+        let mut answer = String::new();
+        stdin.lock().read_line(&mut answer).unwrap();
+        if !answer.trim().eq_ignore_ascii_case("y") {
+            println!("Setup cancelled.");
+            return Ok(());
+        }
+    }
+
+    println!("\n{}\n", "FlowSTT Setup".bold());
+
+    // Connect to service (needed for model download and device listing)
+    client
+        .connect_or_spawn()
+        .await
+        .map_err(|e| format!("Failed to connect to service: {}", e))?;
+
+    // --- Step 1: Model Download ---
+    println!("{}", "Step 1: Speech Model".bold());
+    let model_response = client
+        .request(Request::GetModelStatus)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    match model_response {
+        Response::ModelStatus(status) if status.available => {
+            println!("  Model: {}", "already downloaded".green());
+            println!("  Path: {}", status.path.dimmed());
+        }
+        _ => {
+            print!("  Download Whisper model (~145 MB)? [Y/n] ");
+            stdout.flush().unwrap();
+            let mut answer = String::new();
+            stdin.lock().read_line(&mut answer).unwrap();
+            if answer.trim().is_empty() || answer.trim().eq_ignore_ascii_case("y") {
+                println!("  Downloading...");
+                let response = client
+                    .request(Request::DownloadModel)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                match response {
+                    Response::Ok => {
+                        // Wait for download to complete by polling model status
+                        loop {
+                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                            if let Ok(Response::ModelStatus(s)) =
+                                client.request(Request::GetModelStatus).await
+                            {
+                                if s.available {
+                                    println!("  {}", "Download complete!".green());
+                                    break;
+                                }
+                            }
+                            print!(".");
+                            stdout.flush().unwrap();
+                        }
+                    }
+                    Response::Error { message } => {
+                        println!("  Download failed: {}", message.red());
+                    }
+                    _ => {}
+                }
+            } else {
+                println!("  Skipping model download.");
+            }
+        }
+    }
+
+    // --- Step 2: Device Selection ---
+    println!("\n{}", "Step 2: Microphone".bold());
+    let device_response = client
+        .request(Request::ListDevices {
+            source_type: Some(AudioSourceType::Input),
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut selected_device_id: Option<String> = None;
+
+    match device_response {
+        Response::Devices { devices } if !devices.is_empty() => {
+            println!("  Available input devices:");
+            for (i, device) in devices.iter().enumerate() {
+                println!("    {}: {}", (i + 1).to_string().cyan(), device.name);
+            }
+            print!("  Select device [1-{}]: ", devices.len());
+            stdout.flush().unwrap();
+            let mut answer = String::new();
+            stdin.lock().read_line(&mut answer).unwrap();
+            if let Ok(idx) = answer.trim().parse::<usize>() {
+                if idx >= 1 && idx <= devices.len() {
+                    selected_device_id = Some(devices[idx - 1].id.clone());
+                    println!("  Selected: {}", devices[idx - 1].name.green());
+                }
+            }
+            if selected_device_id.is_none() {
+                println!("  {}", "No device selected, skipping.".yellow());
+            }
+        }
+        _ => {
+            println!("  {}", "No input devices found.".yellow());
+        }
+    }
+
+    // --- Step 3: Transcription Mode ---
+    println!("\n{}", "Step 3: Transcription Mode".bold());
+    println!("  1: {} - always listening, VAD-triggered", "Automatic".cyan());
+    println!(
+        "  2: {} - hold a key to transcribe (default)",
+        "Push-to-Talk".cyan()
+    );
+    print!("  Select mode [1-2, default=2]: ");
+    stdout.flush().unwrap();
+    let mut answer = String::new();
+    stdin.lock().read_line(&mut answer).unwrap();
+
+    let mode = match answer.trim() {
+        "1" => TranscriptionMode::Automatic,
+        _ => TranscriptionMode::PushToTalk,
+    };
+
+    let mode_name = match mode {
+        TranscriptionMode::Automatic => "Automatic",
+        TranscriptionMode::PushToTalk => "Push-to-Talk",
+    };
+    println!("  Selected: {}", mode_name.green());
+
+    let mut hotkey = HotkeyCombination::single(KeyCode::default());
+
+    if mode == TranscriptionMode::PushToTalk {
+        print!(
+            "  PTT key [default=RightAlt, or type key name e.g. f5, left_control]: "
+        );
+        stdout.flush().unwrap();
+        let mut key_answer = String::new();
+        stdin.lock().read_line(&mut key_answer).unwrap();
+        let key_str = key_answer.trim();
+        if !key_str.is_empty() {
+            // Try to parse the key name via serde
+            let key_json = format!("\"{}\"", key_str);
+            match serde_json::from_str::<KeyCode>(&key_json) {
+                Ok(key) => {
+                    hotkey = HotkeyCombination::single(key);
+                    println!("  PTT key: {}", key_str.green());
+                }
+                Err(_) => {
+                    println!(
+                        "  {}: Unknown key '{}', using RightAlt",
+                        "Warning".yellow(),
+                        key_str
+                    );
+                }
+            }
+        } else {
+            println!("  PTT key: {}", "RightAlt".green());
+        }
+    }
+
+    // --- Save config ---
+    println!("\n{}", "Saving configuration...".bold());
+    let config = Config {
+        transcription_mode: mode,
+        ptt_hotkeys: vec![hotkey],
+        ..Config::default_with_hotkeys()
+    };
+    config
+        .save()
+        .map_err(|e| CliError::general(format!("Failed to save config: {}", e)))?;
+
+    // Configure service with chosen device
+    if let Some(ref device_id) = selected_device_id {
+        let _ = client
+            .request(Request::SetSources {
+                source1_id: Some(device_id.clone()),
+                source2_id: None,
+            })
+            .await;
+    }
+
+    // Set mode on service
+    let _ = client
+        .request(Request::SetTranscriptionMode { mode })
+        .await;
+
+    println!("\n{}", "Setup complete!".green().bold());
+    println!(
+        "  Config saved to: {}",
+        Config::config_path().display().to_string().dimmed()
+    );
 
     Ok(())
 }

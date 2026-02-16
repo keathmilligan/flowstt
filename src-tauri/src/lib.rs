@@ -13,7 +13,9 @@ use ipc_client::{IpcClient, SharedIpcClient};
 use std::env;
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Listener, Manager, State};
+use tauri::webview::WebviewWindowBuilder;
+use tauri::WebviewUrl;
 use tokio::sync::Mutex;
 
 /// Detect if running on Wayland and set workaround env vars (Linux-specific)
@@ -335,6 +337,116 @@ fn set_theme_mode(mode: ThemeMode, app_handle: AppHandle) -> Result<(), String> 
     Ok(())
 }
 
+/// Check if first-time setup is needed (no config file exists).
+#[tauri::command]
+fn needs_setup() -> bool {
+    Config::needs_setup()
+}
+
+/// Cancel any pending Win32 menu activation mode on a window.
+///
+/// On Windows, releasing the Alt key sends WM_SYSKEYUP which triggers
+/// the menu bar activation heuristic in WebView2. Even in a decorationless
+/// window this suspends the compositor/rendering. Sending WM_CANCELMODE
+/// to the HWND cancels this state and restores normal rendering.
+#[tauri::command]
+fn cancel_menu_mode(window: tauri::WebviewWindow) {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe {
+                    let _ = windows::Win32::UI::WindowsAndMessaging::SendMessageW(
+                    windows::Win32::Foundation::HWND(hwnd.0),
+                    windows::Win32::UI::WindowsAndMessaging::WM_CANCELMODE,
+                    None,
+                    None,
+                );
+            }
+        }
+    }
+}
+
+/// Complete the first-time setup wizard.
+/// Saves the chosen configuration and signals the setup window to close.
+#[tauri::command]
+async fn complete_setup(
+    transcription_mode: TranscriptionMode,
+    hotkeys: Vec<HotkeyCombination>,
+    source1_id: Option<String>,
+    source2_id: Option<String>,
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    // Build and save config
+    let config = Config {
+        transcription_mode,
+        ptt_hotkeys: hotkeys,
+        ..Config::default_with_hotkeys()
+    };
+    config
+        .save()
+        .map_err(|e| format!("Failed to save config: {}", e))?;
+
+    // Configure service with chosen sources (if any)
+    if source1_id.is_some() || source2_id.is_some() {
+        let _ = send_request(
+            &state.ipc,
+            Request::SetSources {
+                source1_id,
+                source2_id,
+            },
+        )
+        .await;
+    }
+
+    // Set transcription mode on service
+    let _ = send_request(
+        &state.ipc,
+        Request::SetTranscriptionMode {
+            mode: transcription_mode,
+        },
+    )
+    .await;
+
+    // Emit setup-complete event to transition to main window
+    app_handle
+        .emit("setup-complete", ())
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+
+    Ok(())
+}
+
+/// Start a test audio capture on a device for level metering.
+#[tauri::command]
+async fn test_audio_device(
+    device_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let response = send_request(
+        &state.ipc,
+        Request::TestAudioDevice { device_id },
+    )
+    .await?;
+
+    match response {
+        Response::Ok => Ok(()),
+        Response::Error { message } => Err(message),
+        _ => Err("Unexpected response".into()),
+    }
+}
+
+/// Stop any active test audio capture.
+#[tauri::command]
+async fn stop_test_audio_device(state: State<'_, AppState>) -> Result<(), String> {
+    let response = send_request(&state.ipc, Request::StopTestAudioDevice).await?;
+
+    match response {
+        Response::Ok => Ok(()),
+        Response::Error { message } => Err(message),
+        _ => Err("Unexpected response".into()),
+    }
+}
+
 /// Log a startup diagnostic message from the frontend to stderr.
 /// This ensures all startup timing is visible in a single stream (the terminal).
 #[tauri::command]
@@ -457,6 +569,52 @@ pub fn run() {
             if let Err(e) = tray::setup_tray(app) {
                 eprintln!("[FlowSTT] Failed to set up system tray: {}", e);
             }
+
+            // First-run detection: show setup wizard if no config exists
+            if Config::needs_setup() {
+                eprintln!("[Startup] First run detected - showing setup wizard");
+
+                // Hide the main window (it starts hidden via tauri.conf.json,
+                // but ensure it stays hidden)
+                if let Some(main_win) = app.get_webview_window("main") {
+                    let _ = main_win.hide();
+                }
+
+                // Create the setup window
+                let _setup_win = WebviewWindowBuilder::new(
+                    app,
+                    "setup",
+                    WebviewUrl::App("setup.html".into()),
+                )
+                .title("FlowSTT Setup")
+                .inner_size(600.0, 500.0)
+                .min_inner_size(500.0, 400.0)
+                .center()
+                .decorations(false)
+                .transparent(true)
+                .shadow(true)
+                .visible(true)
+                .build()
+                .expect("Failed to create setup window");
+
+                // Listen for setup completion
+                let app_handle = app.handle().clone();
+                app.listen("setup-complete", move |_event| {
+                    eprintln!("[Startup] Setup complete - transitioning to main window");
+
+                    // Close the setup window
+                    if let Some(setup_win) = app_handle.get_webview_window("setup") {
+                        let _ = setup_win.destroy();
+                    }
+
+                    // Show the main window
+                    if let Some(main_win) = app_handle.get_webview_window("main") {
+                        let _ = main_win.show();
+                        let _ = main_win.set_focus();
+                    }
+                });
+            }
+
             eprintln!(
                 "[Startup] setup() hook done (+{}ms from run())",
                 app_t0.elapsed().as_millis()
@@ -493,6 +651,11 @@ pub fn run() {
             connect_events,
             get_theme_mode,
             set_theme_mode,
+            needs_setup,
+            cancel_menu_mode,
+            complete_setup,
+            test_audio_device,
+            stop_test_audio_device,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -82,6 +82,14 @@ pub enum EventType {
     /// Model download complete
     ModelDownloadComplete { success: bool },
 
+    /// Audio level update from device test capture
+    AudioLevelUpdate {
+        /// The device being tested
+        device_id: String,
+        /// Current RMS audio level in dB (negative values, where 0 dB is full scale)
+        level_db: f32,
+    },
+
     /// Push-to-talk key pressed
     PttPressed,
 

@@ -293,8 +293,16 @@ fn get_default_model_path() -> PathBuf {
     cache_dir.join("whisper").join("ggml-base.en.bin")
 }
 
-/// Download the Whisper model to the specified path.
-pub fn download_model(model_path: &PathBuf) -> Result<(), String> {
+/// Download the Whisper model to the specified path with streaming progress.
+///
+/// The `on_progress` callback is invoked with the current download percentage
+/// (0-100). It is called at most once per 1% increment to avoid flooding.
+pub async fn download_model<F>(model_path: &PathBuf, on_progress: F) -> Result<(), String>
+where
+    F: Fn(u8),
+{
+    use tokio::io::AsyncWriteExt;
+
     // Create parent directory if it doesn't exist
     if let Some(parent) = model_path.parent() {
         std::fs::create_dir_all(parent)
@@ -303,8 +311,11 @@ pub fn download_model(model_path: &PathBuf) -> Result<(), String> {
 
     tracing::info!("Downloading whisper model to: {}", model_path.display());
 
-    // Download the model
-    let response = reqwest::blocking::get(MODEL_URL)
+    let client = reqwest::Client::new();
+    let response = client
+        .get(MODEL_URL)
+        .send()
+        .await
         .map_err(|e| format!("Failed to download model: {}", e))?;
 
     if !response.status().is_success() {
@@ -314,14 +325,51 @@ pub fn download_model(model_path: &PathBuf) -> Result<(), String> {
         ));
     }
 
-    let bytes = response
-        .bytes()
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+    let total_size = response.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+    let mut last_percent: u8 = 0;
 
-    // Write to file
-    std::fs::write(model_path, &bytes).map_err(|e| format!("Failed to write file: {}", e))?;
+    on_progress(0);
 
-    tracing::info!("Model downloaded successfully ({} bytes)", bytes.len());
+    // Write to a temporary file first, then rename on success
+    let tmp_path = model_path.with_extension("bin.part");
+    let mut file = tokio::fs::File::create(&tmp_path)
+        .await
+        .map_err(|e| format!("Failed to create file: {}", e))?;
+
+    let mut stream = response.bytes_stream();
+    use futures::StreamExt;
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| format!("Failed to read response: {}", e))?;
+
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Failed to write file: {}", e))?;
+
+        downloaded += chunk.len() as u64;
+
+        if total_size > 0 {
+            let percent = ((downloaded * 100) / total_size).min(99) as u8;
+            if percent > last_percent {
+                on_progress(percent);
+                last_percent = percent;
+            }
+        }
+    }
+
+    file.flush()
+        .await
+        .map_err(|e| format!("Failed to flush file: {}", e))?;
+    drop(file);
+
+    // Rename temp file to final path
+    tokio::fs::rename(&tmp_path, model_path)
+        .await
+        .map_err(|e| format!("Failed to rename temp file: {}", e))?;
+
+    on_progress(100);
+    tracing::info!("Model downloaded successfully ({} bytes)", downloaded);
 
     Ok(())
 }

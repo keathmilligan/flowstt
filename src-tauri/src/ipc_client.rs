@@ -259,6 +259,31 @@ fn forward_event_to_tauri(app_handle: &AppHandle, event: EventType) {
         }
         EventType::TranscriptionComplete(result) => {
             let _ = app_handle.emit("transcription-complete", &result);
+
+            // On Windows, WebView2 can enter a frozen rendering state when
+            // Alt (the default PTT key) is released while the window is focused.
+            // WM_SYSKEYUP triggers the Win32 menu bar activation heuristic,
+            // which suspends the compositor. Send WM_CANCELMODE to all windows
+            // to cancel this state, ensuring transcription text renders
+            // immediately rather than waiting for a mouse click.
+            #[cfg(target_os = "windows")]
+            {
+                use tauri::Manager;
+                for label in ["main", "setup"] {
+                    if let Some(win) = app_handle.get_webview_window(label) {
+                        if let Ok(hwnd) = win.hwnd() {
+                            unsafe {
+                                let _ = windows::Win32::UI::WindowsAndMessaging::SendMessageW(
+                                    windows::Win32::Foundation::HWND(hwnd.0),
+                                    windows::Win32::UI::WindowsAndMessaging::WM_CANCELMODE,
+                                    None,
+                                    None,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
         }
         EventType::SpeechStarted => {
             let _ = app_handle.emit("speech-started", ());
@@ -279,6 +304,23 @@ fn forward_event_to_tauri(app_handle: &AppHandle, event: EventType) {
         }
         EventType::ModelDownloadComplete { success } => {
             let _ = app_handle.emit("model-download-complete", success);
+        }
+        EventType::AudioLevelUpdate {
+            device_id,
+            level_db,
+        } => {
+            #[derive(serde::Serialize, Clone)]
+            struct AudioLevel {
+                device_id: String,
+                level_db: f32,
+            }
+            let _ = app_handle.emit(
+                "audio-level-update",
+                AudioLevel {
+                    device_id,
+                    level_db,
+                },
+            );
         }
         EventType::PttPressed => {
             let _ = app_handle.emit("ptt-pressed", ());

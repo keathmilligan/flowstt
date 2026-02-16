@@ -387,21 +387,18 @@ pub async fn handle_request(request: Request) -> Response {
                 return Response::error("Model already downloaded");
             }
 
-            // Download in background
+            // Download in background with streaming progress
             let path_clone = model_path.clone();
-            tokio::task::spawn_blocking(move || {
-                // Broadcast progress (simplified - just start/end)
-                broadcast_event(Response::Event {
-                    event: EventType::ModelDownloadProgress { percent: 0 },
-                });
-
-                let result = download_model(&path_clone);
+            tokio::spawn(async move {
+                let result = download_model(&path_clone, |percent| {
+                    broadcast_event(Response::Event {
+                        event: EventType::ModelDownloadProgress { percent },
+                    });
+                })
+                .await;
 
                 match result {
                     Ok(()) => {
-                        broadcast_event(Response::Event {
-                            event: EventType::ModelDownloadProgress { percent: 100 },
-                        });
                         broadcast_event(Response::Event {
                             event: EventType::ModelDownloadComplete { success: true },
                         });
@@ -603,6 +600,31 @@ pub async fn handle_request(request: Request) -> Response {
             } else {
                 Response::error(format!("History entry not found: {}", id))
             }
+        }
+
+        Request::TestAudioDevice { device_id } => {
+            // Stop any existing test capture (handles device switching)
+            crate::test_capture::stop_test_capture();
+
+            // Stop the main audio loop so it doesn't race on try_recv().
+            // The audio backend is a singleton with a single mpsc channel;
+            // only one consumer can poll it at a time.
+            if is_audio_loop_active() {
+                stop_audio_loop();
+                if let Some(backend) = platform::get_backend() {
+                    let _ = backend.stop_capture();
+                }
+            }
+
+            match crate::test_capture::start_test_capture(device_id) {
+                Ok(()) => Response::Ok,
+                Err(e) => Response::error(e),
+            }
+        }
+
+        Request::StopTestAudioDevice => {
+            crate::test_capture::stop_test_capture();
+            Response::Ok
         }
 
         Request::Shutdown => {

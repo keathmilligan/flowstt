@@ -81,6 +81,15 @@ pub enum Request {
         id: String,
     },
 
+    // === Audio Device Testing ===
+    /// Start a lightweight test capture on a device to report audio levels
+    TestAudioDevice {
+        /// The device ID to test
+        device_id: String,
+    },
+    /// Stop any active audio device test capture
+    StopTestAudioDevice,
+
     // === Service Control ===
     /// Ping for health check
     Ping,
@@ -106,6 +115,12 @@ impl Request {
                     if id.is_empty() {
                         return Err("source2_id cannot be empty".to_string());
                     }
+                }
+                Ok(())
+            }
+            Request::TestAudioDevice { device_id } => {
+                if device_id.is_empty() {
+                    return Err("device_id cannot be empty".to_string());
                 }
                 Ok(())
             }

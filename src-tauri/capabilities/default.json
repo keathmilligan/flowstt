@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for all application windows",
-  "windows": ["main", "visualization", "about", "config"],
+  "windows": ["main", "visualization", "about", "config", "setup"],
   "permissions": [
     "core:default",
     "core:window:default",
