@@ -2,6 +2,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { initTheme, getResolvedTheme, onThemeChange } from "./theme";
 
+import logoLight from "./assets/flowstt-portrait-light.svg";
+import logoDark from "./assets/flowstt-portrait.svg";
+
 const WEBSITE_URL = "https://github.com/keathmilligan/flowstt";
 const GITHUB_URL = "https://github.com/keathmilligan/flowstt";
 const LICENSE_URL = "https://github.com/keathmilligan/flowstt/blob/main/LICENSE";
@@ -48,9 +51,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const aboutLogo = document.querySelector<HTMLImageElement>(".about-logo");
     if (aboutLogo) {
         const updateLogo = (theme: string) => {
-            aboutLogo.src = theme === "light"
-                ? "/images/flowstt-portrait-light.svg"
-                : "/images/flowstt-portrait.svg";
+            aboutLogo.src = theme === "light" ? logoLight : logoDark;
         };
         updateLogo(getResolvedTheme());
         onThemeChange(updateLogo);

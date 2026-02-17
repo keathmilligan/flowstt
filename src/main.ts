@@ -6,6 +6,9 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { MiniWaveformRenderer, VisualizationPayload } from "./renderers";
 import { initTheme, getResolvedTheme, onThemeChange } from "./theme";
 
+import logoLight from "./assets/flowstt-landscape-light.svg";
+import logoDark from "./assets/flowstt-landscape.svg";
+
 // Startup timing - marks the moment the JS module is first evaluated
 const JS_MODULE_LOAD_TIME = performance.now();
 // Log startup diagnostics to stderr via Tauri command so they appear
@@ -537,9 +540,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const appLogo = document.querySelector<HTMLImageElement>(".app-logo");
   if (appLogo) {
     const updateLogo = (theme: string) => {
-      appLogo.src = theme === "light"
-        ? "/src/assets/flowstt-landscape-light.svg"
-        : "/src/assets/flowstt-landscape.svg";
+      appLogo.src = theme === "light" ? logoLight : logoDark;
     };
     updateLogo(getResolvedTheme());
     onThemeChange(updateLogo);
