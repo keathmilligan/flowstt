@@ -236,6 +236,27 @@ pub async fn handle_request(request: Request) -> Response {
     match request {
         Request::Ping => Response::Pong,
 
+        Request::GetRuntimeMode => {
+            let state_arc = get_service_state();
+            let state = state_arc.lock().await;
+            Response::RuntimeMode {
+                mode: state.runtime_mode.as_str().to_string(),
+            }
+        }
+
+        Request::RegisterOwner => {
+            let state_arc = get_service_state();
+            let state = state_arc.lock().await;
+            
+            if state.runtime_mode != flowstt_common::RuntimeMode::Production {
+                info!("RegisterOwner rejected - not in production mode");
+                Response::OwnerRegistered { was_registered: false }
+            } else {
+                info!("RegisterOwner accepted - production mode");
+                Response::OwnerRegistered { was_registered: true }
+            }
+        }
+
         Request::ListDevices { source_type } => {
             let mut devices = Vec::new();
 

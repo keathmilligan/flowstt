@@ -1,6 +1,7 @@
 //! IPC client for communicating with the FlowSTT service.
 
 use flowstt_common::ipc::{get_socket_path, read_json, write_json, IpcError, Request, Response};
+use flowstt_common::{runtime_mode, RuntimeMode};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -11,12 +12,17 @@ pub struct Client {
     stream: Option<tokio::net::UnixStream>,
     #[cfg(windows)]
     stream: Option<tokio::net::windows::named_pipe::NamedPipeClient>,
+    /// Whether this client spawned the service
+    spawned_service: bool,
 }
 
 impl Client {
     /// Create a new client (not connected).
     pub fn new() -> Self {
-        Self { stream: None }
+        Self {
+            stream: None,
+            spawned_service: false,
+        }
     }
 
     /// Connect to the service.
@@ -51,6 +57,8 @@ impl Client {
     }
 
     /// Try to connect, spawning the service if needed.
+    /// Returns Ok if connected, Err if connection/spawn failed.
+    /// After connecting, check `spawned_service()` to know if you should register as owner.
     pub async fn connect_or_spawn(&mut self) -> Result<(), IpcError> {
         // First try to connect
         if self.connect().await.is_ok() {
@@ -60,6 +68,7 @@ impl Client {
         // Service not running, try to spawn it
         eprintln!("Service not running, starting...");
         spawn_service()?;
+        self.spawned_service = true;
 
         // Wait for service to be ready (up to 5 seconds)
         for _ in 0..50 {
@@ -72,6 +81,74 @@ impl Client {
         Err(IpcError::ParseError(
             "Service failed to start within timeout".into(),
         ))
+    }
+
+    /// Returns true if this client spawned the service (and should potentially register as owner).
+    pub fn spawned_service(&self) -> bool {
+        self.spawned_service
+    }
+
+    /// Register this client as the service owner.
+    /// Only succeeds in production mode.
+    pub async fn register_owner(&mut self) -> Result<bool, IpcError> {
+        match self.request(Request::RegisterOwner).await? {
+            Response::OwnerRegistered { was_registered } => Ok(was_registered),
+            Response::Error { message } => Err(IpcError::ParseError(message)),
+            _ => Err(IpcError::ParseError("Unexpected response".into())),
+        }
+    }
+
+    /// Get the current runtime mode from the service.
+    pub async fn get_runtime_mode(&mut self) -> Result<RuntimeMode, IpcError> {
+        match self.request(Request::GetRuntimeMode).await? {
+            Response::RuntimeMode { mode } => {
+                match mode.as_str() {
+                    "development" => Ok(RuntimeMode::Development),
+                    "production" => Ok(RuntimeMode::Production),
+                    _ => Err(IpcError::ParseError(format!("Unknown runtime mode: {}", mode))),
+                }
+            }
+            Response::Error { message } => Err(IpcError::ParseError(message)),
+            _ => Err(IpcError::ParseError("Unexpected response".into())),
+        }
+    }
+
+    /// Request service shutdown.
+    pub async fn shutdown(&mut self) -> Result<(), IpcError> {
+        match self.request(Request::Shutdown).await? {
+            Response::Ok => Ok(()),
+            Response::Error { message } => Err(IpcError::ParseError(message)),
+            _ => Err(IpcError::ParseError("Unexpected response".into())),
+        }
+    }
+
+    /// If in production mode and this client spawned the service, register as owner.
+    /// Returns true if successfully registered as owner.
+    pub async fn maybe_register_as_owner(&mut self) -> bool {
+        if !self.spawned_service {
+            return false;
+        }
+
+        let mode = runtime_mode();
+        if mode != RuntimeMode::Production {
+            return false;
+        }
+
+        match self.register_owner().await {
+            Ok(true) => {
+                eprintln!("Registered as service owner");
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Shutdown the service if this client is the owner in production mode.
+    pub async fn shutdown_if_owner(&mut self) {
+        if self.spawned_service && runtime_mode() == RuntimeMode::Production {
+            eprintln!("Shutting down spawned service...");
+            let _ = self.shutdown().await;
+        }
     }
 
     /// Send a request and receive a response.

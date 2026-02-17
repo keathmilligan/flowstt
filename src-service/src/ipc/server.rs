@@ -7,13 +7,42 @@
 use flowstt_common::ipc::{
     get_socket_path, read_json, write_json, EventType, IpcError, Request, Response,
 };
+use flowstt_common::RuntimeMode;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tracing::{debug, error, info, warn};
 
 use super::handlers::handle_request;
 use crate::is_shutdown_requested;
+use crate::request_shutdown;
 use crate::state::get_service_state;
+
+/// Active client connection count
+static CLIENT_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether an owner client is connected
+static OWNER_CONNECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn increment_client_count() {
+    CLIENT_COUNT.fetch_add(1, Ordering::SeqCst);
+}
+
+fn decrement_client_count() {
+    CLIENT_COUNT.fetch_sub(1, Ordering::SeqCst);
+}
+
+fn get_client_count() -> usize {
+    CLIENT_COUNT.load(Ordering::SeqCst)
+}
+
+fn set_owner_connected(connected: bool) {
+    OWNER_CONNECTED.store(connected, Ordering::SeqCst);
+}
+
+fn is_owner_connected() -> bool {
+    OWNER_CONNECTED.load(Ordering::SeqCst)
+}
 
 /// Event broadcaster for subscribed clients
 pub type EventSender = broadcast::Sender<Response>;
@@ -170,8 +199,32 @@ pub async fn run_server(ready_tx: Option<oneshot::Sender<()>>) -> Result<(), Ipc
 /// Handle a Unix socket client connection.
 #[cfg(unix)]
 async fn handle_unix_client(stream: tokio::net::UnixStream) -> Result<(), IpcError> {
+    increment_client_count();
+    info!("Client connected (total: {})", get_client_count());
+    
     let (reader, writer) = stream.into_split();
-    handle_client_connection(reader, writer).await
+    let is_owner = handle_client_connection(reader, writer).await.ok().unwrap_or(false);
+    
+    if is_owner {
+        set_owner_connected(false);
+        info!("Owner client disconnected");
+        
+        let runtime_mode = {
+            let state = get_service_state();
+            let s = state.lock().await;
+            s.runtime_mode
+        };
+        
+        if runtime_mode == RuntimeMode::Production && get_client_count() == 1 {
+            info!("Owner disconnected in production mode with no other clients - shutting down");
+            request_shutdown();
+        }
+    }
+    
+    decrement_client_count();
+    info!("Client disconnected (remaining: {})", get_client_count());
+    
+    Ok(())
 }
 
 /// Run the IPC server on Windows using named pipes.
@@ -248,12 +301,37 @@ pub async fn run_server(mut ready_tx: Option<oneshot::Sender<()>>) -> Result<(),
 async fn handle_windows_client(
     pipe: tokio::net::windows::named_pipe::NamedPipeServer,
 ) -> Result<(), IpcError> {
+    increment_client_count();
+    info!("Client connected (total: {})", get_client_count());
+    
     let (reader, writer) = tokio::io::split(pipe);
-    handle_client_connection(reader, writer).await
+    let is_owner = handle_client_connection(reader, writer).await.ok().unwrap_or(false);
+    
+    if is_owner {
+        set_owner_connected(false);
+        info!("Owner client disconnected");
+        
+        let runtime_mode = {
+            let state = get_service_state();
+            let s = state.lock().await;
+            s.runtime_mode
+        };
+        
+        if runtime_mode == RuntimeMode::Production && get_client_count() == 1 {
+            info!("Owner disconnected in production mode with no other clients - shutting down");
+            request_shutdown();
+        }
+    }
+    
+    decrement_client_count();
+    info!("Client disconnected (remaining: {})", get_client_count());
+    
+    Ok(())
 }
 
 /// Handle a client connection (platform-agnostic).
-async fn handle_client_connection<R, W>(reader: R, writer: W) -> Result<(), IpcError>
+/// Returns true if this connection was registered as an owner.
+async fn handle_client_connection<R, W>(reader: R, writer: W) -> Result<bool, IpcError>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
     W: tokio::io::AsyncWrite + Unpin + Send + 'static,
@@ -262,6 +340,7 @@ where
     let writer = Arc::new(Mutex::new(writer));
     let mut event_receiver: Option<broadcast::Receiver<Response>> = None;
     let mut subscribed = false;
+    let mut is_owner = false;
 
     loop {
         if is_shutdown_requested() {
@@ -305,12 +384,20 @@ where
                         continue;
                     }
                     // Wait for request from client (with longer timeout since events are prioritized)
-                    read_result = tokio::time::timeout(std::time::Duration::from_secs(1), read_json(&mut *r)) => {
+                    read_result = tokio::time::timeout(std::time::Duration::from_secs(1), read_json::<_, Request>(&mut *r)) => {
                         drop(r); // Release reader lock
                         match read_result {
                             Ok(Ok(request)) => {
                                 info!("Received request: {:?}", request);
-                                let response = handle_request(request).await;
+                                let response = handle_request(request.clone()).await;
+                                
+                                // Handle RegisterOwner locally
+                                if let Response::OwnerRegistered { was_registered: true } = &response {
+                                    is_owner = true;
+                                    set_owner_connected(true);
+                                    info!("Client registered as owner");
+                                }
+                                
                                 info!("Sending response: {:?}", response);
                                 let mut w = writer.lock().await;
                                 write_json(&mut *w, &response).await?;
@@ -331,7 +418,7 @@ where
         // Not subscribed - just handle requests with timeout
         let read_result = {
             let mut r = reader.lock().await;
-            tokio::time::timeout(std::time::Duration::from_millis(100), read_json(&mut *r)).await
+            tokio::time::timeout(std::time::Duration::from_millis(100), read_json::<_, Request>(&mut *r)).await
         };
 
         match read_result {
@@ -346,7 +433,15 @@ where
                 }
 
                 // Handle request
-                let response = handle_request(request).await;
+                let response = handle_request(request.clone()).await;
+                
+                // Handle RegisterOwner locally
+                if let Response::OwnerRegistered { was_registered: true } = &response {
+                    is_owner = true;
+                    set_owner_connected(true);
+                    info!("Client registered as owner");
+                }
+                
                 info!("Sending response: {:?}", response);
 
                 // Send response
@@ -379,5 +474,5 @@ where
         }
     }
 
-    Ok(())
+    Ok(is_owner)
 }

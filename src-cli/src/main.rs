@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use colored::Colorize;
 use flowstt_common::config::Config;
 use flowstt_common::ipc::{EventType, Request, Response};
-use flowstt_common::{AudioSourceType, ConfigValues, HotkeyCombination, KeyCode, RecordingMode, TranscriptionMode};
+use flowstt_common::{runtime_mode, AudioSourceType, ConfigValues, HotkeyCombination, KeyCode, RecordingMode, RuntimeMode, TranscriptionMode};
 
 use client::Client;
 
@@ -220,9 +220,22 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         .await
         .map_err(|e| format!("Failed to connect to service: {}", e))?;
 
-    match cli.command {
+    // Register as owner if in production mode and we spawned the service
+    client.maybe_register_as_owner().await;
+
+    // Run the command and store the result
+    let result = run_command(&mut client, &cli).await;
+
+    // Shutdown service if we're the owner in production mode
+    client.shutdown_if_owner().await;
+
+    result
+}
+
+async fn run_command(client: &mut Client, cli: &Cli) -> Result<(), CliError> {
+    match &cli.command {
         Commands::List { source } => {
-            let source_type = source.map(|s| match s {
+            let source_type = source.as_ref().map(|s| match s {
                 SourceFilter::Input => AudioSourceType::Input,
                 SourceFilter::System => AudioSourceType::System,
             });
@@ -283,7 +296,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             };
 
             // Set AEC and recording mode first
-            if aec {
+            if *aec {
                 let _ = client
                     .request(Request::SetAecEnabled { enabled: true })
                     .await;
@@ -297,8 +310,8 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             // Set sources - this starts capture automatically
             let response = client
                 .request(Request::SetSources {
-                    source1_id: source1,
-                    source2_id: source2,
+                    source1_id: source1.clone(),
+                    source2_id: source2.clone(),
                 })
                 .await
                 .map_err(|e| e.to_string())?;
@@ -436,6 +449,12 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                             };
                             println!("Speech: {}", speech_str);
                             println!("Queue depth: {}", status.queue_depth);
+                        }
+
+                        // Show runtime mode in verbose output
+                        if cli.verbose {
+                            let mode_str = runtime_mode().as_str();
+                            println!("Runtime: {}", mode_str.dimmed());
                         }
                     }
                 }

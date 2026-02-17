@@ -9,7 +9,7 @@ mod tray;
 
 use flowstt_common::config::{Config, ThemeMode};
 use flowstt_common::ipc::{Request, Response};
-use flowstt_common::{AudioDevice, HotkeyCombination, RecordingMode, TranscriptionMode};
+use flowstt_common::{runtime_mode, AudioDevice, HotkeyCombination, RecordingMode, TranscriptionMode};
 use ipc_client::{IpcClient, SharedIpcClient};
 use std::env;
 use std::sync::Arc;
@@ -382,6 +382,12 @@ fn set_theme_mode(mode: ThemeMode, app_handle: AppHandle) -> Result<(), String> 
 #[tauri::command]
 fn needs_setup() -> bool {
     Config::needs_setup()
+}
+
+/// Get the current runtime mode (development or production).
+#[tauri::command]
+fn get_runtime_mode() -> String {
+    runtime_mode().as_str().to_string()
 }
 
 /// Cancel any pending Win32 menu activation mode on a window.
@@ -757,6 +763,7 @@ pub fn run() {
             get_theme_mode,
             set_theme_mode,
             needs_setup,
+            get_runtime_mode,
             cancel_menu_mode,
             complete_setup,
             test_audio_device,

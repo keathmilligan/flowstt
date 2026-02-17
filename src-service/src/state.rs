@@ -3,12 +3,13 @@
 //! This module manages the shared state for the FlowSTT service,
 //! including transcription status and audio backend state.
 
-use flowstt_common::{HotkeyCombination, RecordingMode, TranscribeStatus, TranscriptionMode};
+use flowstt_common::{
+    HotkeyCombination, RecordingMode, RuntimeMode, TranscribeStatus, TranscriptionMode,
+};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Global service state
-#[derive(Default)]
 pub struct ServiceState {
     /// Current transcription status (capturing, in_speech, queue_depth, error)
     pub transcribe_status: TranscribeStatus,
@@ -30,6 +31,26 @@ pub struct ServiceState {
     pub is_ptt_active: bool,
     /// Whether auto mode is currently active (for PTT suppression)
     pub auto_mode_active: bool,
+    /// Current runtime mode (development or production)
+    pub runtime_mode: RuntimeMode,
+}
+
+impl Default for ServiceState {
+    fn default() -> Self {
+        Self {
+            transcribe_status: TranscribeStatus::default(),
+            aec_enabled: false,
+            recording_mode: RecordingMode::default(),
+            source1_id: None,
+            source2_id: None,
+            transcription_mode: TranscriptionMode::default(),
+            ptt_hotkeys: Vec::new(),
+            auto_toggle_hotkeys: Vec::new(),
+            is_ptt_active: false,
+            auto_mode_active: false,
+            runtime_mode: RuntimeMode::default(),
+        }
+    }
 }
 
 impl ServiceState {

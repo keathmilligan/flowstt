@@ -105,6 +105,15 @@ fn main() {
 
     info!("FlowSTT Service starting (pid: {})...", std::process::id());
 
+    // Detect and store runtime mode
+    let runtime_mode = flowstt_common::runtime_mode();
+    info!("Runtime mode: {:?}", runtime_mode);
+    {
+        let state = state::get_service_state();
+        let mut state = state.blocking_lock();
+        state.runtime_mode = runtime_mode;
+    }
+
     // Load transcription history and clean up old WAV files (>24h)
     {
         let history = history::get_history();

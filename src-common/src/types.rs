@@ -40,6 +40,26 @@ pub enum TranscriptionMode {
     PushToTalk,
 }
 
+/// Runtime mode - determines behavior for service lifecycle management.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeMode {
+    /// Development mode - service persists independently for debugging
+    Development,
+    /// Production mode - service lifecycle coupled to owner client
+    #[default]
+    Production,
+}
+
+impl RuntimeMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RuntimeMode::Development => "development",
+            RuntimeMode::Production => "production",
+        }
+    }
+}
+
 /// Platform-independent key codes for push-to-talk hotkey configuration.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

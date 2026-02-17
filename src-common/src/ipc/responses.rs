@@ -42,6 +42,12 @@ pub enum Response {
     /// Pong response to ping
     Pong,
 
+    /// Current runtime mode (development or production)
+    RuntimeMode { mode: String },
+
+    /// Owner registration result
+    OwnerRegistered { was_registered: bool },
+
     // === Error Response ===
     /// Error occurred
     Error { message: String },

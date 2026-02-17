@@ -104,6 +104,10 @@ pub enum Request {
     Ping,
     /// Request service shutdown
     Shutdown,
+    /// Get the current runtime mode (development or production)
+    GetRuntimeMode,
+    /// Register this client as the service owner (only succeeds in production mode)
+    RegisterOwner,
 }
 
 impl Request {
