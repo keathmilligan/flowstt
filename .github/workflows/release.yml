@@ -61,7 +61,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        platform: [ubuntu-22.04, macos-latest, windows-latest]
+        # TODO: Re-enable Linux support in a future version
+        # platform: [ubuntu-22.04, macos-latest, windows-latest]
+        platform: [macos-latest, windows-latest]
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -158,8 +160,9 @@ jobs:
             args: --target aarch64-apple-darwin
           - platform: macos-latest
             args: --target x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            args: ""
+          # TODO: Re-enable Linux support in a future version
+          # - platform: ubuntu-22.04
+          #   args: ""
           - platform: windows-latest
             args: ""
 
