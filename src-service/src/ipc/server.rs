@@ -40,10 +40,6 @@ fn set_owner_connected(connected: bool) {
     OWNER_CONNECTED.store(connected, Ordering::SeqCst);
 }
 
-fn is_owner_connected() -> bool {
-    OWNER_CONNECTED.load(Ordering::SeqCst)
-}
-
 /// Event broadcaster for subscribed clients
 pub type EventSender = broadcast::Sender<Response>;
 

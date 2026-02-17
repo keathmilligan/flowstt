@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use colored::Colorize;
 use flowstt_common::config::Config;
 use flowstt_common::ipc::{EventType, Request, Response};
-use flowstt_common::{runtime_mode, AudioSourceType, ConfigValues, HotkeyCombination, KeyCode, RecordingMode, RuntimeMode, TranscriptionMode};
+use flowstt_common::{runtime_mode, AudioSourceType, ConfigValues, HotkeyCombination, KeyCode, RecordingMode, TranscriptionMode};
 
 use client::Client;
 

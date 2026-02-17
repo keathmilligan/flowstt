@@ -84,6 +84,7 @@ impl Client {
     }
 
     /// Returns true if this client spawned the service (and should potentially register as owner).
+    #[allow(dead_code)]
     pub fn spawned_service(&self) -> bool {
         self.spawned_service
     }
@@ -99,6 +100,7 @@ impl Client {
     }
 
     /// Get the current runtime mode from the service.
+    #[allow(dead_code)]
     pub async fn get_runtime_mode(&mut self) -> Result<RuntimeMode, IpcError> {
         match self.request(Request::GetRuntimeMode).await? {
             Response::RuntimeMode { mode } => {
