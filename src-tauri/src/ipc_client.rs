@@ -345,7 +345,17 @@ fn forward_event_to_tauri(app_handle: &AppHandle, event: EventType) {
 
 /// Get the path to the service executable.
 fn get_service_path() -> PathBuf {
-    // Try to find the service binary next to the GUI binary
+    // First, check the extracted binaries directory (for installed apps)
+    let extracted_path = crate::binaries::binaries_dir().join(if cfg!(windows) {
+        "flowstt-service.exe"
+    } else {
+        "flowstt-service"
+    });
+    if extracted_path.exists() {
+        return extracted_path;
+    }
+
+    // Try to find the service binary next to the GUI binary (development mode)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(dir) = exe_path.parent() {
             let service_path = dir.join(if cfg!(windows) {

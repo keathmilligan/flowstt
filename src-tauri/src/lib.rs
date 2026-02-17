@@ -3,6 +3,7 @@
 //! This module provides the Tauri commands that the frontend uses.
 //! All audio capture and transcription is handled by the service via IPC.
 
+mod binaries;
 mod ipc_client;
 mod tray;
 
@@ -487,6 +488,51 @@ async fn stop_test_audio_device(state: State<'_, AppState>) -> Result<(), String
     }
 }
 
+/// Update information for the frontend
+#[derive(serde::Serialize)]
+struct UpdateInfo {
+    version: String,
+    current_version: String,
+    date: Option<String>,
+    body: Option<String>,
+}
+
+/// Check if an update is available.
+#[tauri::command]
+async fn check_update(app_handle: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let updater = app_handle.updater().map_err(|e| e.to_string())?;
+
+    match updater.check().await {
+        Ok(Some(update)) => Ok(Some(UpdateInfo {
+            version: update.version.clone(),
+            current_version: app_handle.config().version.clone().unwrap_or_default(),
+            date: update.date.map(|d| d.to_string()),
+            body: update.body.clone(),
+        })),
+        Ok(None) => Ok(None),
+        Err(e) => Err(format!("Update check failed: {}", e)),
+    }
+}
+
+/// Install the available update.
+#[tauri::command]
+async fn install_update(app_handle: AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let updater = app_handle.updater().map_err(|e| e.to_string())?;
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        Ok(None) => Err("No update available".into()),
+        Err(e) => Err(format!("Update check failed: {}", e)),
+    }
+}
+
 /// Log a startup diagnostic message from the frontend to stderr.
 /// This ensures all startup timing is visible in a single stream (the terminal).
 #[tauri::command]
@@ -596,6 +642,7 @@ pub fn run() {
     configure_wayland_workarounds();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
             ipc: SharedIpcClient::new(),
             event_task_running: Arc::new(Mutex::new(false)),
@@ -605,6 +652,22 @@ pub fn run() {
                 "[Startup] setup() hook called (+{}ms from run())",
                 app_t0.elapsed().as_millis()
             );
+
+            // Extract bundled binaries if running from installed app
+            let app_handle = app.handle().clone();
+            match binaries::extract_all_binaries(&app_handle) {
+                Ok(extracted) => {
+                    eprintln!(
+                        "[Startup] Extracted binaries: service={:?}, cli={:?}",
+                        extracted.service, extracted.cli
+                    );
+                }
+                Err(e) => {
+                    // This is expected in development mode - binaries won't be in resources
+                    eprintln!("[Startup] Binary extraction skipped (dev mode or not bundled): {}", e);
+                }
+            }
+
             // Set up the system tray
             if let Err(e) = tray::setup_tray(app) {
                 eprintln!("[FlowSTT] Failed to set up system tray: {}", e);
@@ -698,6 +761,8 @@ pub fn run() {
             complete_setup,
             test_audio_device,
             stop_test_audio_device,
+            check_update,
+            install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

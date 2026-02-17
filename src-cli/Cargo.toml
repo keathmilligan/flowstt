@@ -27,3 +27,6 @@ colored = "2"
 
 # Cross-platform terminal
 crossterm = "0.28"
+
+# File paths
+directories = "5"

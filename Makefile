@@ -7,7 +7,8 @@
         run-app run-app-release \
         run-cli run-cli-release \
         lint lint-rust lint-ts test \
-        install-deps check-binaries help
+        install-deps check-binaries help \
+        package package-release prepare-binaries
 
 # Default target
 all: build
@@ -181,6 +182,34 @@ check-binaries:
 	@test -f target/release/flowstt-service && echo "  [OK] flowstt-service" || echo "  [MISSING] flowstt-service"
 
 # =============================================================================
+# Packaging
+# =============================================================================
+
+# Prepare binaries for bundling (copy to src-tauri/binaries/)
+prepare-binaries: build-release
+	@echo "==> Preparing binaries for bundling..."
+	@mkdir -p src-tauri/binaries
+ifeq ($(OS),Windows_NT)
+	@cp target/release/flowstt-service.exe src-tauri/binaries/flowstt-service.exe
+	@cp target/release/flowstt.exe src-tauri/binaries/flowstt.exe
+else
+	@cp target/release/flowstt-service src-tauri/binaries/flowstt-service
+	@cp target/release/flowstt src-tauri/binaries/flowstt
+	@chmod +x src-tauri/binaries/flowstt-service src-tauri/binaries/flowstt
+endif
+	@echo "==> Binaries prepared in src-tauri/binaries/"
+
+# Package the application (build installers)
+package: prepare-binaries
+	@echo "==> Building Tauri application package..."
+	pnpm tauri build
+	@echo "==> Package complete!"
+	@echo "Installers available in: src-tauri/target/release/bundle/"
+
+# Package the application (release mode with all optimizations)
+package-release: package
+
+# =============================================================================
 # Help
 # =============================================================================
 
@@ -224,6 +253,10 @@ help:
 	@echo "  install-deps     Install npm/pnpm dependencies"
 	@echo "  check-binaries   Check if all binaries were built"
 	@echo "  help             Show this help message"
+	@echo ""
+	@echo "Packaging Targets:"
+	@echo "  package          Build all binaries and create installers"
+	@echo "  package-release  Same as package (release mode)"
 	@echo ""
 	@echo "CUDA Acceleration:"
 	@echo "  The 'cuda' targets enable GPU-accelerated transcription via whisper.cpp."

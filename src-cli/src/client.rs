@@ -146,7 +146,21 @@ impl Client {
 
 /// Get the path to the service executable.
 fn get_service_path() -> PathBuf {
-    // Try to find the service binary next to the CLI binary
+    // First, check the standard binaries directory (for installed apps)
+    let data_dir = directories::BaseDirs::new()
+        .map(|b| b.data_local_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let binaries_dir = data_dir.join("FlowSTT").join("bin");
+    let extracted_path = binaries_dir.join(if cfg!(windows) {
+        "flowstt-service.exe"
+    } else {
+        "flowstt-service"
+    });
+    if extracted_path.exists() {
+        return extracted_path;
+    }
+
+    // Try to find the service binary next to the CLI binary (development or bundled)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(dir) = exe_path.parent() {
             let service_path = dir.join(if cfg!(windows) {

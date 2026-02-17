@@ -40,7 +40,15 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "icons/tray/*": "icons/tray/"
+      "icons/tray/*": "icons/tray/",
+      "binaries/*": "binaries/"
+    },
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/icon.ico",
+        "installMode": "currentUser"
+      }
     },
     "icon": [
       "icons/32x32.png",

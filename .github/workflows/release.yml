@@ -246,6 +246,28 @@ jobs:
         working-directory: src-cli
         run: cargo build --release
 
+      - name: Prepare binaries for bundling (Unix)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          mkdir -p src-tauri/binaries
+          if [ "${{ matrix.platform }}" = "macos-latest" ]; then
+            TARGET="${{ matrix.args }}"
+            TARGET=${TARGET#--target }
+            cp target/${TARGET}/release/flowstt-service src-tauri/binaries/flowstt-service
+            cp target/${TARGET}/release/flowstt src-tauri/binaries/flowstt
+          else
+            cp target/release/flowstt-service src-tauri/binaries/flowstt-service
+            cp target/release/flowstt src-tauri/binaries/flowstt
+          fi
+          chmod +x src-tauri/binaries/flowstt-service src-tauri/binaries/flowstt
+
+      - name: Prepare binaries for bundling (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          mkdir -p src-tauri/binaries
+          cp target/release/flowstt-service.exe src-tauri/binaries/flowstt-service.exe
+          cp target/release/flowstt.exe src-tauri/binaries/flowstt.exe
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.0
         env:
@@ -299,3 +321,54 @@ jobs:
           sleep 10
 
           gh release upload "v${VERSION}" "$ARCHIVE_NAME" --clobber || echo "Upload will be retried by tauri-action"
+
+  generate-update-json:
+    needs: [validate-version, build-and-release]
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate latest.json for Tauri updater
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+          
+          # Get the release ID
+          RELEASE_ID=$(gh release view "v${VERSION}" --repo ${{ github.repository }} --json id -q '.id')
+          
+          # Get the release assets
+          ASSETS=$(gh release view "v${VERSION}" --repo ${{ github.repository }} --json assets -q '.assets')
+          
+          # Build the update JSON
+          # For now, we'll create a basic structure - the signature will need to be added when we have signing
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "darwin-aarch64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/FlowSTT_aarch64.dmg"
+              },
+              "darwin-x86_64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/FlowSTT_x64.dmg"
+              },
+              "windows-x86_64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/FlowSTT_${VERSION}_x64-setup.exe"
+              }
+            }
+          }
+          EOF
+          
+          cat latest.json
+
+      - name: Upload latest.json to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+          gh release upload "v${VERSION}" latest.json --clobber
