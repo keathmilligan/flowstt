@@ -481,82 +481,91 @@ fn add_dll_directory(dir: &Path) {
 
 /// Initialize the ggml library and load all backends (CUDA, etc.)
 /// This must be called before loading whisper to ensure GPU backends are available.
+/// On macOS, ggml is bundled inside libwhisper.dylib (Metal support), so we skip this.
 fn init_ggml_backends() {
-    GGML_LIB.get_or_init(|| {
-        let lib_name = if cfg!(windows) {
-            "ggml.dll"
-        } else if cfg!(target_os = "macos") {
-            "libggml.dylib"
-        } else {
-            "libggml.so"
-        };
+    // macOS: ggml is statically linked into libwhisper.dylib (Metal-enabled)
+    // No separate ggml library needed - skip to avoid misleading warnings
+    #[cfg(target_os = "macos")]
+    {
+        return;
+    }
 
-        // Search paths in order of preference
-        let search_paths = [
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|p| p.join(lib_name))),
-            Some(std::env::current_dir().unwrap_or_default().join(lib_name)),
-            Some(std::path::PathBuf::from(lib_name)),
-        ];
+    #[cfg(not(target_os = "macos"))]
+    {
+        GGML_LIB.get_or_init(|| {
+            let lib_name = if cfg!(windows) {
+                "ggml.dll"
+            } else {
+                "libggml.so"
+            };
 
-        for path in search_paths.iter().flatten() {
-            if path.exists() {
-                // Get the directory containing the library
-                let lib_dir = path.parent().map(|p| p.to_path_buf());
+            // Search paths in order of preference
+            let search_paths = [
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.join(lib_name))),
+                Some(std::env::current_dir().unwrap_or_default().join(lib_name)),
+                Some(std::path::PathBuf::from(lib_name)),
+            ];
 
-                // On Windows, add the library's directory to DLL search path
-                // This allows ggml.dll to find ggml-cuda.dll and CUDA runtime
-                #[cfg(windows)]
-                if let Some(ref dir) = lib_dir {
-                    add_dll_directory(dir);
-                }
+            for path in search_paths.iter().flatten() {
+                if path.exists() {
+                    // Get the directory containing the library
+                    let lib_dir = path.parent().map(|p| p.to_path_buf());
 
-                match GgmlLibrary::load(path) {
-                    Ok(lib) => {
-                        tracing::info!("Loaded ggml library from: {}", path.display());
-                        // Load all backends (CUDA, etc.) from the same directory - this is critical for GPU support
-                        if let Some(ref dir) = lib_dir {
-                            tracing::info!("Loading ggml backends from: {}", dir.display());
-                            lib.load_backends_from_path(dir);
+                    // On Windows, add the library's directory to DLL search path
+                    // This allows ggml.dll to find ggml-cuda.dll and CUDA runtime
+                    #[cfg(windows)]
+                    if let Some(ref dir) = lib_dir {
+                        add_dll_directory(dir);
+                    }
 
-                            // Try to manually load CUDA backend (prebuilt binaries need this)
-                            #[cfg(windows)]
-                            try_load_cuda_backend(&lib, dir);
+                    match GgmlLibrary::load(path) {
+                        Ok(lib) => {
+                            tracing::info!("Loaded ggml library from: {}", path.display());
+                            // Load all backends (CUDA, etc.) from the same directory - this is critical for GPU support
+                            if let Some(ref dir) = lib_dir {
+                                tracing::info!("Loading ggml backends from: {}", dir.display());
+                                lib.load_backends_from_path(dir);
 
-                            tracing::info!("ggml backends loaded");
+                                // Try to manually load CUDA backend (prebuilt binaries need this)
+                                #[cfg(windows)]
+                                try_load_cuda_backend(&lib, dir);
+
+                                tracing::info!("ggml backends loaded");
+                            }
+                            return Some(lib);
                         }
-                        return Some(lib);
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to load ggml library from {}: {}",
-                            path.display(),
-                            e
-                        );
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to load ggml library from {}: {}",
+                                path.display(),
+                                e
+                            );
+                        }
                     }
                 }
             }
-        }
 
-        // Try loading from system path
-        match GgmlLibrary::load(lib_name) {
-            Ok(lib) => {
-                tracing::info!("Loaded ggml library from system path");
-                // Load backends from current directory as fallback
-                let cwd = std::env::current_dir().unwrap_or_default();
-                lib.load_backends_from_path(&cwd);
-                Some(lib)
+            // Try loading from system path
+            match GgmlLibrary::load(lib_name) {
+                Ok(lib) => {
+                    tracing::info!("Loaded ggml library from system path");
+                    // Load backends from current directory as fallback
+                    let cwd = std::env::current_dir().unwrap_or_default();
+                    lib.load_backends_from_path(&cwd);
+                    Some(lib)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load ggml library: {} - GPU backends may not be available",
+                        e
+                    );
+                    None
+                }
             }
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to load ggml library: {} - GPU backends may not be available",
-                    e
-                );
-                None
-            }
-        }
-    });
+        });
+    }
 }
 
 /// Initialize the global whisper library

@@ -10,9 +10,20 @@ use flowstt_common::{runtime_mode, RuntimeMode};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
+
+/// Cached path to the service binary (set once at startup)
+static SERVICE_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// Initialize the service path from the app handle.
+/// Must be called once during app setup.
+pub fn init_service_path(app_handle: &AppHandle) {
+    let path = crate::binaries::get_service_path(app_handle);
+    let _ = SERVICE_PATH.set(path);
+}
 
 /// IPC client for communicating with the FlowSTT service.
 pub struct IpcClient {
@@ -410,36 +421,28 @@ fn forward_event_to_tauri(app_handle: &AppHandle, event: EventType) {
 
 /// Get the path to the service executable.
 fn get_service_path() -> PathBuf {
-    // First, check the extracted binaries directory (for installed apps)
-    let extracted_path = crate::binaries::binaries_dir().join(if cfg!(windows) {
+    // Use cached path if available (set during app setup)
+    if let Some(path) = SERVICE_PATH.get() {
+        return path.clone();
+    }
+
+    // Fallback: try to find service next to GUI binary (development mode)
+    let platform_name = if cfg!(windows) {
         "flowstt-service.exe"
     } else {
         "flowstt-service"
-    });
-    if extracted_path.exists() {
-        return extracted_path;
-    }
+    };
 
-    // Try to find the service binary next to the GUI binary (development mode)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(dir) = exe_path.parent() {
-            let service_path = dir.join(if cfg!(windows) {
-                "flowstt-service.exe"
-            } else {
-                "flowstt-service"
-            });
+            let service_path = dir.join(platform_name);
             if service_path.exists() {
                 return service_path;
             }
         }
     }
 
-    // Fall back to PATH
-    PathBuf::from(if cfg!(windows) {
-        "flowstt-service.exe"
-    } else {
-        "flowstt-service"
-    })
+    PathBuf::from(platform_name)
 }
 
 /// Spawn the service process.

@@ -695,19 +695,15 @@ pub fn run() {
                 app_t0.elapsed().as_millis()
             );
 
-            // Extract bundled binaries if running from installed app
+            // Initialize service path (finds bundle binaries or dev location)
             let app_handle = app.handle().clone();
-            match binaries::extract_all_binaries(&app_handle) {
-                Ok(extracted) => {
-                    debug!(
-                        "[Startup] Extracted binaries: service={:?}, cli={:?}",
-                        extracted.service, extracted.cli
-                    );
-                }
-                Err(e) => {
-                    // This is expected in development mode - binaries won't be in resources
-                    debug!("[Startup] Binary extraction skipped (dev mode or not bundled): {}", e);
-                }
+            ipc_client::init_service_path(&app_handle);
+
+            // Log whether we're running from bundle
+            if binaries::is_bundled(&app_handle) {
+                debug!("[Startup] Running from installed app bundle");
+            } else {
+                debug!("[Startup] Running in development mode");
             }
 
             // Set up the system tray

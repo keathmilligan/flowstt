@@ -1,11 +1,13 @@
-//! Binary extraction and management for bundled service and CLI binaries.
+//! Binary path resolution for bundled service and CLI binaries.
 //!
 //! When FlowSTT is installed from a distribution package, the service and CLI
-//! binaries are bundled as resources. This module handles extracting them to
-//! the application support directory on first launch and providing their paths
-//! at runtime.
+//! binaries are bundled as resources in the app bundle. This module provides
+//! paths to these binaries without extracting them - they run directly from
+//! the bundle, which means they're removed when the app is uninstalled.
+//!
+//! Native libraries (whisper, ggml) are also bundled alongside binaries
+//! so the service can find them at runtime.
 
-use std::fs;
 use std::io;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -25,132 +27,122 @@ fn with_exe_suffix(name: &str) -> String {
     name.to_string()
 }
 
-/// Get the directory where extracted binaries are stored.
-pub fn binaries_dir() -> PathBuf {
-    let data_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("FlowSTT");
-    data_dir.join("bin")
+/// Get the path to bundled binaries directory in the app bundle.
+/// Returns None if running in development mode (no bundle).
+pub fn bundle_binaries_dir(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
+    let resource_path = app_handle.path().resource_dir().ok()?;
+    let binaries_dir = resource_path.join("binaries");
+    if binaries_dir.exists() {
+        Some(binaries_dir)
+    } else {
+        None
+    }
 }
 
-/// Ensure the binaries directory exists.
-fn ensure_binaries_dir() -> io::Result<PathBuf> {
-    let dir = binaries_dir();
-    if !dir.exists() {
-        fs::create_dir_all(&dir)?;
+/// Get the path to the service binary.
+/// Checks bundle first, then falls back to development path.
+pub fn get_service_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    let platform_name = with_exe_suffix(SERVICE_BINARY_NAME);
+
+    // First, check bundle resources (installed app)
+    if let Some(bundle_dir) = bundle_binaries_dir(app_handle) {
+        let service_path = bundle_dir.join(&platform_name);
+        if service_path.exists() {
+            return service_path;
+        }
     }
-    Ok(dir)
+
+    // Fall back to development path (next to GUI binary)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(dir) = exe_path.parent() {
+            let service_path = dir.join(&platform_name);
+            if service_path.exists() {
+                return service_path;
+            }
+        }
+    }
+
+    // Last resort: assume on PATH
+    PathBuf::from(platform_name)
 }
 
-/// Extract a bundled binary to the application support directory.
-/// Returns the path to the extracted binary.
-fn extract_binary(app_handle: &tauri::AppHandle, binary_name: &str) -> io::Result<PathBuf> {
-    let dest_dir = ensure_binaries_dir()?;
-    let platform_binary_name = with_exe_suffix(binary_name);
-    let dest_path = dest_dir.join(&platform_binary_name);
+/// Get the path to the CLI binary.
+/// Checks bundle first, then falls back to development path.
+#[allow(dead_code)]
+pub fn get_cli_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    let platform_name = with_exe_suffix(CLI_BINARY_NAME);
 
-    // Check if already extracted
-    if dest_path.exists() {
-        return Ok(dest_path);
+    if let Some(bundle_dir) = bundle_binaries_dir(app_handle) {
+        let cli_path = bundle_dir.join(&platform_name);
+        if cli_path.exists() {
+            return cli_path;
+        }
     }
 
-    // Try to get the resource path
-    let resource_path = app_handle
-        .path()
-        .resource_dir()
-        .map_err(|e| io::Error::new(io::ErrorKind::NotFound, e))?;
-
-    let src_path = resource_path.join("binaries").join(&platform_binary_name);
-
-    if !src_path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("Binary not found in bundle: {}", platform_binary_name),
-        ));
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(dir) = exe_path.parent() {
+            let cli_path = dir.join(&platform_name);
+            if cli_path.exists() {
+                return cli_path;
+            }
+        }
     }
 
-    // Copy the binary
-    fs::copy(&src_path, &dest_path)?;
-
-    // Set executable permission on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&dest_path, fs::Permissions::from_mode(0o755))?;
-    }
-
-    Ok(dest_path)
+    PathBuf::from(platform_name)
 }
 
-/// Extract all bundled binaries if not already extracted.
-/// Returns paths to the service and CLI binaries.
-pub fn extract_all_binaries(
-    app_handle: &tauri::AppHandle,
-) -> Result<ExtractedBinaries, ExtractionError> {
-    let service_path =
-        extract_binary(app_handle, SERVICE_BINARY_NAME).map_err(|e| ExtractionError {
-            binary: SERVICE_BINARY_NAME.to_string(),
-            source: e,
-        })?;
-
-    let cli_path = extract_binary(app_handle, CLI_BINARY_NAME).map_err(|e| ExtractionError {
-        binary: CLI_BINARY_NAME.to_string(),
-        source: e,
-    })?;
-
-    Ok(ExtractedBinaries {
-        service: service_path,
-        cli: cli_path,
-    })
-}
-
-/// Paths to extracted binaries.
+/// Paths to bundled binaries.
 #[derive(Clone, Debug)]
-pub struct ExtractedBinaries {
+#[allow(dead_code)]
+pub struct BundlePaths {
     /// Path to the flowstt-service binary
     pub service: PathBuf,
     /// Path to the flowstt CLI binary
     pub cli: PathBuf,
 }
 
-/// Error during binary extraction.
+/// Error when binaries are not found.
 #[derive(Debug)]
-pub struct ExtractionError {
-    /// Name of the binary that failed to extract
-    pub binary: String,
-    /// The underlying I/O error
-    pub source: io::Error,
+pub struct BinariesNotFoundError {
+    pub message: String,
 }
 
-impl std::fmt::Display for ExtractionError {
+impl std::fmt::Display for BinariesNotFoundError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Failed to extract binary '{}': {}",
-            self.binary, self.source
-        )
+        write!(f, "{}", self.message)
     }
 }
 
-impl std::error::Error for ExtractionError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.source)
+impl std::error::Error for BinariesNotFoundError {}
+
+/// Get paths to bundled binaries.
+/// Returns an error if binaries are not found (neither in bundle nor development).
+pub fn get_bundle_paths(
+    app_handle: &tauri::AppHandle,
+) -> Result<BundlePaths, BinariesNotFoundError> {
+    let service_path = get_service_path(app_handle);
+    let cli_path = get_cli_path(app_handle);
+
+    if !service_path.exists() {
+        return Err(BinariesNotFoundError {
+            message: format!("Service binary not found: {:?}", service_path),
+        });
     }
+
+    if !cli_path.exists() {
+        return Err(BinariesNotFoundError {
+            message: format!("CLI binary not found: {:?}", cli_path),
+        });
+    }
+
+    Ok(BundlePaths {
+        service: service_path,
+        cli: cli_path,
+    })
 }
 
-/// Check if binaries are bundled (running from installed app) or development.
-/// Returns true if running from an installed application.
+/// Check if running from installed app bundle (vs development).
 #[allow(dead_code)]
-pub fn is_bundled() -> bool {
-    // In development, binaries won't be in the resources directory
-    // We check if the binaries directory exists in resources
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
-        .map(|dir| {
-            dir.join("binaries")
-                .join(with_exe_suffix(SERVICE_BINARY_NAME))
-                .exists()
-        })
-        .unwrap_or(false)
+pub fn is_bundled(app_handle: &tauri::AppHandle) -> bool {
+    bundle_binaries_dir(app_handle).is_some()
 }
