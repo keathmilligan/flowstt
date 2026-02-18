@@ -13,13 +13,7 @@
         <div class="setup-header" data-tauri-drag-region>
             <img src="/src/assets/flowstt-landscape.svg" alt="FlowSTT" class="setup-logo" />
             <div class="step-indicator" id="step-indicator">
-                <div class="step-dot active" data-step="1"></div>
-                <div class="step-line"></div>
-                <div class="step-dot" data-step="2"></div>
-                <div class="step-line"></div>
-                <div class="step-dot" data-step="3"></div>
-                <div class="step-line"></div>
-                <div class="step-dot" data-step="4"></div>
+                <!-- Dots are rendered dynamically by setup.ts based on active step list -->
             </div>
         </div>
 
@@ -94,6 +88,21 @@
                     <div id="hotkey-recorder" class="hotkey-recorder hidden">
                         <span id="recorder-status">Press a key...</span>
                     </div>
+                </div>
+            </div>
+
+            <!-- Step: Accessibility Permission (macOS + PTT only, inserted dynamically) -->
+            <div class="step hidden" id="step-accessibility">
+                <h2 class="step-title">Accessibility Access</h2>
+                <p class="step-desc">FlowSTT needs Accessibility access to detect your Push-to-Talk key globally, even when another app is in focus.</p>
+                <div class="accessibility-step-area">
+                    <div id="accessibility-status" class="accessibility-status pending">
+                        <span id="accessibility-status-icon" class="accessibility-icon">&#8987;</span>
+                        <span id="accessibility-status-label">Waiting for permission...</span>
+                    </div>
+                    <button id="open-accessibility-btn" class="btn btn-secondary">Open System Settings</button>
+                    <p class="accessibility-hint">Enable FlowSTT in <strong>Privacy &amp; Security → Accessibility</strong>, then return here.<br>
+                    <small>If the button stays disabled after granting access, restart FlowSTT.</small></p>
                 </div>
             </div>
 

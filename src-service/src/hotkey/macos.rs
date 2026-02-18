@@ -377,6 +377,12 @@ pub struct MacOSHotkeyBackend {
     auto_mode_state: Arc<AutoModeState>,
 }
 
+/// Returns true if the process currently has macOS Accessibility permission.
+/// This is safe to call at any time and does not show a system dialog.
+pub fn check_accessibility_permission() -> bool {
+    unsafe { macos_ffi::AXIsProcessTrusted() }
+}
+
 impl MacOSHotkeyBackend {
     pub fn new() -> Self {
         Self {
@@ -385,34 +391,6 @@ impl MacOSHotkeyBackend {
             thread_handle: None,
             unavailable_reason: None,
             auto_mode_state: AutoModeState::shared(),
-        }
-    }
-
-    /// Check if we have Accessibility permission
-    fn check_accessibility_permission() -> bool {
-        unsafe { macos_ffi::AXIsProcessTrusted() }
-    }
-
-    /// Request accessibility permission (shows system dialog)
-    fn request_accessibility_permission() -> bool {
-        unsafe {
-            // Create options dictionary with prompt key set to true
-            let options = macos_ffi::CFDictionaryCreate(
-                std::ptr::null(),
-                &macos_ffi::kAXTrustedCheckOptionPrompt as *const _,
-                &macos_ffi::kCFBooleanTrue as *const _,
-                1,
-                &macos_ffi::kCFTypeDictionaryKeyCallBacks,
-                &macos_ffi::kCFTypeDictionaryValueCallBacks,
-            );
-
-            let trusted = macos_ffi::AXIsProcessTrustedWithOptions(options);
-
-            if !options.is_null() {
-                macos_ffi::CFRelease(options as *const std::ffi::c_void);
-            }
-
-            trusted
         }
     }
 }
@@ -431,14 +409,16 @@ impl HotkeyBackend for MacOSHotkeyBackend {
             return Err("No hotkey combinations configured".to_string());
         }
 
-        if !Self::check_accessibility_permission() {
-            info!("[Hotkey] Accessibility permission not granted, requesting...");
-            let granted = Self::request_accessibility_permission();
-            if !granted {
-                let msg = "Push-to-Talk requires Accessibility permission to detect hotkeys. Grant permission in System Settings > Privacy & Security > Accessibility, then restart FlowSTT.".to_string();
-                self.unavailable_reason = Some(msg.clone());
-                return Err(msg);
-            }
+        // Use the module-level check which consults both AXIsProcessTrusted() and the
+        // flag set by the GUI via SetAccessibilityPermissionGranted. On macOS, the service
+        // binary is unsigned and AXIsProcessTrusted() returns false for its own process
+        // even after the user grants access for the parent app. The GUI confirms permission
+        // on its behalf via IPC before starting capture.
+        if !super::check_accessibility_permission() {
+            let msg = "Push-to-Talk requires Accessibility permission to detect hotkeys. Grant permission in System Settings > Privacy & Security > Accessibility, then restart FlowSTT.".to_string();
+            info!("[Hotkey] Accessibility permission not granted: {}", msg);
+            self.unavailable_reason = Some(msg.clone());
+            return Err(msg);
         }
 
         let (sender, receiver) = mpsc::channel();
@@ -739,7 +719,6 @@ mod macos_ffi {
     pub type CFRunLoopSourceRef = *mut c_void;
     pub type CFRunLoopRef = *mut c_void;
     pub type CFAllocatorRef = *const c_void;
-    pub type CFDictionaryRef = *mut c_void;
     pub type CFStringRef = *const c_void;
     pub type CFTypeRef = *const c_void;
 
@@ -770,24 +749,10 @@ mod macos_ffi {
     pub type CGEventTapCallBack =
         extern "C" fn(CGEventTapProxy, CGEventType, CGEventRef, *mut c_void) -> CGEventRef;
 
-    // CF Types
-    #[repr(C)]
-    pub struct CFDictionaryKeyCallBacks {
-        _data: [u8; 0],
-    }
-
-    #[repr(C)]
-    pub struct CFDictionaryValueCallBacks {
-        _data: [u8; 0],
-    }
-
     #[link(name = "CoreFoundation", kind = "framework")]
     extern "C" {
         pub static kCFRunLoopCommonModes: CFStringRef;
         pub static kCFRunLoopDefaultMode: CFStringRef;
-        pub static kCFBooleanTrue: CFTypeRef;
-        pub static kCFTypeDictionaryKeyCallBacks: CFDictionaryKeyCallBacks;
-        pub static kCFTypeDictionaryValueCallBacks: CFDictionaryValueCallBacks;
 
         pub fn CFRunLoopGetCurrent() -> CFRunLoopRef;
         pub fn CFRunLoopAddSource(rl: CFRunLoopRef, source: CFRunLoopSourceRef, mode: CFStringRef);
@@ -807,14 +772,6 @@ mod macos_ffi {
             order: i64,
         ) -> CFRunLoopSourceRef;
         pub fn CFRelease(cf: CFTypeRef);
-        pub fn CFDictionaryCreate(
-            allocator: CFAllocatorRef,
-            keys: *const *const c_void,
-            values: *const *const c_void,
-            num_values: i64,
-            key_callbacks: *const CFDictionaryKeyCallBacks,
-            value_callbacks: *const CFDictionaryValueCallBacks,
-        ) -> CFDictionaryRef;
     }
 
     #[link(name = "CoreGraphics", kind = "framework")]
@@ -834,8 +791,8 @@ mod macos_ffi {
 
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
-        pub static kAXTrustedCheckOptionPrompt: CFStringRef;
+        /// Returns true if the current process has been trusted for Accessibility access.
+        /// Safe to call at any time; does not show a system dialog.
         pub fn AXIsProcessTrusted() -> bool;
-        pub fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
     }
 }

@@ -493,7 +493,7 @@ fn init_ggml_backends() {
     // No separate ggml library needed - skip to avoid misleading warnings
     #[cfg(target_os = "macos")]
     {
-        return;
+        // Nothing to do on macOS
     }
 
     #[cfg(not(target_os = "macos"))]

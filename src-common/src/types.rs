@@ -495,6 +495,14 @@ pub struct PttStatus {
     /// Error message if PTT is unavailable (e.g., missing permissions)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Whether macOS Accessibility permission is currently granted.
+    /// Always true on non-macOS platforms (permission not applicable).
+    #[serde(default = "default_true")]
+    pub accessibility_permission_granted: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Information about an audio device.

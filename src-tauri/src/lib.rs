@@ -21,6 +21,16 @@ use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
+/// FFI bindings for macOS Accessibility APIs (ApplicationServices framework).
+#[cfg(target_os = "macos")]
+mod macos_ffi {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        /// Returns true if the current process has been trusted for Accessibility access.
+        pub fn AXIsProcessTrusted() -> bool;
+    }
+}
+
 /// Detect if running on Wayland and set workaround env vars (Linux-specific)
 #[cfg(target_os = "linux")]
 fn configure_wayland_workarounds() {
@@ -560,6 +570,54 @@ async fn stop_test_audio_device(state: State<'_, AppState>) -> Result<(), String
     }
 }
 
+/// Notify the service that the GUI process has confirmed Accessibility permission is granted.
+/// The service binary is unsigned and AXIsProcessTrusted() returns false in its own process
+/// context. This signal lets it skip that check and proceed to CGEventTapCreate directly.
+#[tauri::command]
+async fn notify_accessibility_permission_granted(
+    granted: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let response = send_request(
+        &state.ipc,
+        Request::SetAccessibilityPermissionGranted { granted },
+    )
+    .await?;
+    match response {
+        Response::Ok => Ok(()),
+        Response::Error { message } => Err(message),
+        _ => Err("Unexpected response".into()),
+    }
+}
+
+/// Open macOS System Settings at Privacy & Security → Accessibility.
+/// No-op on non-macOS platforms.
+#[tauri::command]
+fn open_accessibility_settings() {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .spawn();
+    }
+}
+
+/// Check whether the process currently has macOS Accessibility permission.
+/// Returns true on non-macOS platforms (permission not applicable).
+/// Used by the setup wizard to poll permission state on macOS.
+#[tauri::command]
+fn check_accessibility_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: AXIsProcessTrusted() is safe to call at any time.
+        unsafe { macos_ffi::AXIsProcessTrusted() }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
 /// Log a startup diagnostic message from the frontend.
 /// In production mode, writes to the log file. In development mode, writes to stderr.
 #[tauri::command]
@@ -801,6 +859,9 @@ pub fn run() {
             complete_setup,
             test_audio_device,
             stop_test_audio_device,
+            check_accessibility_permission,
+            open_accessibility_settings,
+            notify_accessibility_permission_granted,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

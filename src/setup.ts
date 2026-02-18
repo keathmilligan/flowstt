@@ -61,8 +61,25 @@ function keyDisplayName(code: string): string {
 // State
 // ---------------------------------------------------------------------------
 
-let currentStep = 1;
-const TOTAL_STEPS = 4;
+// Detect macOS at startup for conditional accessibility step.
+// navigator.platform is deprecated but still reliable in Tauri webviews.
+const isMacOS = navigator.platform.toLowerCase().includes("mac");
+
+// Ordered list of step IDs that are active in this session.
+// "step-accessibility" is inserted only on macOS + PTT mode.
+let activeSteps: string[] = [];
+
+function buildActiveSteps(): string[] {
+  const steps = ["step-1", "step-2", "step-3"];
+  if (isMacOS && transcriptionMode === "push_to_talk") {
+    steps.push("step-accessibility");
+  }
+  steps.push("step-4");
+  return steps;
+}
+
+// Current position index into activeSteps (0-based).
+let currentStepIndex = 0;
 
 let modelDownloaded = false;
 let selectedDeviceId: string | null = null;
@@ -73,6 +90,9 @@ let isRecordingHotkey = false;
 let recordedKeys: Set<string> = new Set();
 let currentlyHeldKeys: Set<string> = new Set();
 let releaseTimer: number | null = null;
+
+// Accessibility permission polling
+let accessibilityPollInterval: number | null = null;
 
 // ---------------------------------------------------------------------------
 // DOM refs (filled on DOMContentLoaded)
@@ -100,85 +120,120 @@ let backBtn: HTMLButtonElement;
 let nextBtn: HTMLButtonElement;
 let skipLink: HTMLAnchorElement;
 
+// Accessibility step DOM refs
+let accessibilityStatusEl: HTMLDivElement;
+let accessibilityStatusLabel: HTMLSpanElement;
+let accessibilityStatusIcon: HTMLSpanElement;
+let openAccessibilityBtn: HTMLButtonElement;
+
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
 
-function updateStepIndicator() {
-  const dots = document.querySelectorAll(".step-dot");
-  dots.forEach((dot, i) => {
-    const stepNum = i + 1;
-    dot.classList.toggle("active", stepNum === currentStep);
-    dot.classList.toggle("done", stepNum < currentStep);
+function renderStepIndicator() {
+  const indicator = document.getElementById("step-indicator");
+  if (!indicator) return;
+  indicator.innerHTML = "";
+  activeSteps.forEach((_stepId, i) => {
+    const dot = document.createElement("div");
+    dot.className = "step-dot";
+    dot.dataset.step = String(i + 1);
+    dot.classList.toggle("active", i === currentStepIndex);
+    dot.classList.toggle("done", i < currentStepIndex);
+    indicator.appendChild(dot);
+    if (i < activeSteps.length - 1) {
+      const line = document.createElement("div");
+      line.className = "step-line";
+      indicator.appendChild(line);
+    }
   });
 }
 
-function showStep(step: number) {
-  for (let i = 1; i <= TOTAL_STEPS; i++) {
-    const el = document.getElementById(`step-${i}`);
-    if (el) el.classList.toggle("hidden", i !== step);
+function showStepById(stepId: string) {
+  // Clear accessibility polling when leaving that step
+  if (activeSteps[currentStepIndex] === "step-accessibility") {
+    clearAccessibilityPoll();
   }
 
-  currentStep = step;
-  updateStepIndicator();
+  // Hide all steps
+  const allStepIds = ["step-1", "step-2", "step-3", "step-accessibility", "step-4"];
+  allStepIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("hidden");
+  });
+
+  const target = document.getElementById(stepId);
+  if (target) target.classList.remove("hidden");
+
+  currentStepIndex = activeSteps.indexOf(stepId);
+  renderStepIndicator();
+
+  const isLast = currentStepIndex === activeSteps.length - 1;
+  const isFirst = currentStepIndex === 0;
 
   // Back button visibility
-  backBtn.classList.toggle("hidden", step === 1);
+  backBtn.classList.toggle("hidden", isFirst);
 
   // Next button label and state
-  if (step === TOTAL_STEPS) {
+  if (isLast) {
     nextBtn.textContent = "Finish";
-    nextBtn.disabled = false; // Can always finish (skip test)
+    nextBtn.disabled = false;
   } else {
     nextBtn.textContent = "Next";
     updateNextEnabled();
   }
 
-  // Skip link only on step 1
-  skipLink.classList.toggle("hidden", step !== 1);
+  // Skip link only on first step
+  skipLink.classList.toggle("hidden", !isFirst);
 
   // Step-specific initialization
-  if (step === 2) initDeviceStep();
-  if (step === 3) initModeStep();
-  if (step === 4) initTestStep();
+  if (stepId === "step-2") initDeviceStep();
+  if (stepId === "step-3") initModeStep();
+  if (stepId === "step-accessibility") initAccessibilityStep();
+  if (stepId === "step-4") initTestStep();
 }
 
 function updateNextEnabled() {
-  switch (currentStep) {
-    case 1:
+  const stepId = activeSteps[currentStepIndex];
+  switch (stepId) {
+    case "step-1":
       nextBtn.disabled = !modelDownloaded;
       break;
-    case 2:
+    case "step-2":
       nextBtn.disabled = !selectedDeviceId;
       break;
-    case 3:
+    case "step-3":
       nextBtn.disabled = false;
       break;
-    case 4:
+    case "step-accessibility":
+      // Disabled until permission confirmed; managed by initAccessibilityStep polling
+      break;
+    case "step-4":
       nextBtn.disabled = false;
       break;
   }
 }
 
 async function handleNext() {
-  if (currentStep < TOTAL_STEPS) {
-    showStep(currentStep + 1);
+  if (currentStepIndex < activeSteps.length - 1) {
+    showStepById(activeSteps[currentStepIndex + 1]);
   } else {
     await completeSetup();
   }
 }
 
 function handleBack() {
-  if (currentStep > 1) {
+  if (currentStepIndex > 0) {
+    const currentId = activeSteps[currentStepIndex];
     // Stop test capture when leaving step 2
-    if (currentStep === 2) {
+    if (currentId === "step-2") {
       invoke("stop_test_audio_device").catch(() => {});
     }
     // Stop capture and hotkey listening when leaving step 4
-    if (currentStep === 4) {
+    if (currentId === "step-4") {
       invoke("set_sources", { source1Id: null, source2Id: null }).catch(() => {});
     }
-    showStep(currentStep - 1);
+    showStepById(activeSteps[currentStepIndex - 1]);
   }
 }
 
@@ -323,6 +378,10 @@ function initModeStep() {
 function onModeChange(mode: string) {
   transcriptionMode = mode as "automatic" | "push_to_talk";
   hotkeySection.classList.toggle("hidden", mode === "automatic");
+  // Rebuild active step list when mode changes (accessibility step is conditional)
+  activeSteps = buildActiveSteps();
+  // Re-render indicator to reflect new total
+  renderStepIndicator();
   updateNextEnabled();
 }
 
@@ -390,6 +449,52 @@ function handleRecordKeyUp(e: KeyboardEvent) {
 }
 
 // ---------------------------------------------------------------------------
+// Step: Accessibility Permission (macOS + PTT only)
+// ---------------------------------------------------------------------------
+
+function clearAccessibilityPoll() {
+  if (accessibilityPollInterval !== null) {
+    clearInterval(accessibilityPollInterval);
+    accessibilityPollInterval = null;
+  }
+}
+
+async function initAccessibilityStep() {
+  // Reset to pending state
+  nextBtn.disabled = true;
+  accessibilityStatusEl.className = "accessibility-status pending";
+  accessibilityStatusIcon.textContent = "⏳";
+  accessibilityStatusLabel.textContent = "Waiting for permission...";
+
+  // Check once immediately in case permission was already granted
+  const alreadyGranted = await invoke<boolean>("check_accessibility_permission").catch(() => true);
+  if (alreadyGranted) {
+    onAccessibilityGranted();
+    return;
+  }
+
+  // Poll every 500ms until permission is granted
+  clearAccessibilityPoll();
+  accessibilityPollInterval = window.setInterval(async () => {
+    const granted = await invoke<boolean>("check_accessibility_permission").catch(() => false);
+    if (granted) {
+      clearAccessibilityPoll();
+      onAccessibilityGranted();
+    }
+  }, 500);
+}
+
+function onAccessibilityGranted() {
+  accessibilityStatusEl.className = "accessibility-status granted";
+  accessibilityStatusIcon.textContent = "✓";
+  accessibilityStatusLabel.textContent = "Accessibility access granted!";
+  nextBtn.disabled = false;
+  // Notify the service that the GUI has confirmed permission so it can skip its own
+  // AXIsProcessTrusted() check (which always returns false for unsigned helper binaries).
+  invoke("notify_accessibility_permission_granted", { granted: true }).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
 // Step 4: Test Verification
 // ---------------------------------------------------------------------------
 
@@ -417,6 +522,12 @@ async function initTestStep() {
     await invoke("set_transcription_mode", { mode: transcriptionMode });
     if (transcriptionMode === "push_to_talk") {
       await invoke("set_ptt_hotkeys", { hotkeys: [pttHotkey] });
+      // Re-send the accessibility permission signal immediately before set_sources.
+      // The service's check fires during set_sources → start_capture → start_hotkey,
+      // so the flag must be set before that point.
+      if (isMacOS) {
+        await invoke("notify_accessibility_permission_granted", { granted: true }).catch(() => {});
+      }
     }
     await invoke("set_sources", {
       source1Id: selectedDeviceId,
@@ -511,7 +622,7 @@ async function setupEventListeners() {
   // the window is not focused -- same pattern used to fix this bug in the
   // main window previously.
   await listen<TranscriptionResult>("transcription-complete", (event) => {
-    if (currentStep === 4) {
+    if (activeSteps[currentStepIndex] === "step-4") {
       const text = event.payload.text;
       if (text && text !== "(No speech detected)") {
         requestAnimationFrame(() => {
@@ -589,6 +700,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   nextBtn = document.getElementById("next-btn") as HTMLButtonElement;
   skipLink = document.getElementById("skip-link") as HTMLAnchorElement;
 
+  // Accessibility step DOM refs
+  accessibilityStatusEl = document.getElementById("accessibility-status") as HTMLDivElement;
+  accessibilityStatusLabel = document.getElementById("accessibility-status-label") as HTMLSpanElement;
+  accessibilityStatusIcon = document.getElementById("accessibility-status-icon") as HTMLSpanElement;
+  openAccessibilityBtn = document.getElementById("open-accessibility-btn") as HTMLButtonElement;
+  if (openAccessibilityBtn) {
+    openAccessibilityBtn.addEventListener("click", () => {
+      invoke("open_accessibility_settings").catch(() => {});
+    });
+  }
+
   // Close button - exits the entire application since setup is incomplete
   const closeBtn = document.getElementById("close-btn");
   if (closeBtn) {
@@ -633,12 +755,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Set up event listeners for download progress, audio levels, etc.
   await setupEventListeners();
 
+  // Build the initial step list and render the indicator
+  activeSteps = buildActiveSteps();
+  renderStepIndicator();
+
   // Check if model already exists (auto-skip step 1)
   const alreadyHasModel = await checkModelStatus();
   if (alreadyHasModel) {
     // Auto-advance to step 2
-    showStep(2);
+    showStepById("step-2");
   } else {
-    showStep(1);
+    showStepById("step-1");
   }
 });

@@ -580,6 +580,7 @@ pub async fn handle_request(request: Request) -> Response {
                 is_active: state.is_ptt_active,
                 available,
                 error,
+                accessibility_permission_granted: hotkey::check_accessibility_permission(),
             })
         }
 
@@ -778,6 +779,12 @@ pub async fn handle_request(request: Request) -> Response {
 
         Request::StopTestAudioDevice => {
             crate::test_capture::stop_test_capture();
+            Response::Ok
+        }
+
+        Request::SetAccessibilityPermissionGranted { granted } => {
+            hotkey::set_accessibility_permission_granted(granted);
+            info!("[Hotkey] Accessibility permission signal from GUI: granted={}", granted);
             Response::Ok
         }
 

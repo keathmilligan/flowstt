@@ -99,6 +99,16 @@ pub enum Request {
     /// Stop any active audio device test capture
     StopTestAudioDevice,
 
+    // === Platform Permissions ===
+    /// Notify the service that the GUI process has confirmed Accessibility permission is granted.
+    /// On macOS, the service binary may not have its own Accessibility trust entry (it is an
+    /// unsigned helper), so the GUI confirms permission on its behalf. The service uses this
+    /// signal to skip its own AXIsProcessTrusted() check and proceed directly to CGEventTapCreate.
+    SetAccessibilityPermissionGranted {
+        /// Whether the GUI process has confirmed Accessibility access is granted.
+        granted: bool,
+    },
+
     // === Service Control ===
     /// Ping for health check
     Ping,
