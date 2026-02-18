@@ -5,3 +5,11 @@ sudo rm -rf /Applications/FlowSTT.app
 rm -rf ~/Library/Application\ Support/FlowSTT
 rm -rf ~/Library/Logs/flowstt/
 
+# Remove microphone (input devices) permission
+# flowstt-service is a bare binary tracked by path rather than bundle ID,
+# so a targeted reset is unreliable -- reset all microphone permissions instead.
+# sudo tccutil reset Microphone
+
+# Remove accessibility permission
+tccutil reset Accessibility com.keath.flowstt 2>/dev/null || true
+tccutil reset Accessibility io.flowstt 2>/dev/null || true

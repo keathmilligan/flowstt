@@ -1,8 +1,5 @@
 #!/bin/bash
 
-pkill flowstt
-sudo rm -rf /Applications/FlowSTT.app
-rm -rf ~/Library/Application\ Support/FlowSTT
-rm -rf ~/Library/Logs/flowstt/
+scripts/macos-clean
 sudo ditto "target/release/bundle/macos/FlowSTT.app/" "/Applications/FlowSTT.app"
 
