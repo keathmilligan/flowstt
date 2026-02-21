@@ -609,7 +609,11 @@ pub fn init_library() -> Result<(), String> {
                 .ok()
                 .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             {
-                // Contents/Resources/ - where Tauri bundles resources
+                // Contents/Resources/Frameworks/ - where Tauri bundles resources with subdirectories
+                search_paths.push(Some(
+                    exe_path.join("../Resources/Frameworks").join(lib_name),
+                ));
+                // Contents/Resources/ - direct resource location
                 search_paths.push(Some(exe_path.join("../Resources").join(lib_name)));
                 // Contents/Frameworks/ - standard macOS location
                 search_paths.push(Some(exe_path.join("../Frameworks").join(lib_name)));

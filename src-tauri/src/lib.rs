@@ -617,17 +617,10 @@ async fn stop_test_audio_device() -> Result<(), String> {
 /// The Tauri app process itself now needs Accessibility permission (no more IPC delegation).
 #[tauri::command]
 async fn open_accessibility_settings() -> Result<(), String> {
-    // Request permission directly from the engine's hotkey module (in-process)
+    // AXIsProcessTrustedWithOptions(prompt=true) shows the system dialog and adds the app
+    // to the Accessibility list in System Settings automatically - no need to open
+    // System Settings separately.
     flowstt_engine::hotkey::request_accessibility_permission();
-
-    // Also open System Settings as a fallback
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-            .spawn();
-    }
-
     Ok(())
 }
 

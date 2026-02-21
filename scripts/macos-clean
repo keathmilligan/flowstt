@@ -1,17 +1,52 @@
 #!/bin/bash
 
-pkill flowstt
-sudo rm -rf /Applications/FlowSTT.app
-rm -rf ~/Library/Application\ Support/FlowSTT
-rm -rf ~/Library/Logs/flowstt/
+pkill -x flowstt-app 2>/dev/null || true
+pkill -x flowstt 2>/dev/null || true
 
-# Remove microphone (input devices) permission
-# flowstt-service is a bare binary tracked by path rather than bundle ID,
-# so a targeted reset is unreliable -- reset all microphone permissions instead.
-if [ "$1" = "-a" ]; then 
+sudo rm -rf /Applications/FlowSTT.app
+
+# App data (lowercase - actual runtime location)
+rm -rf ~/Library/Application\ Support/flowstt
+rm -rf ~/Library/Application\ Support/flowstt-app
+rm -rf ~/Library/Application\ Support/io.flowstt
+# Old bundle ID
+rm -rf ~/Library/Application\ Support/com.keath.flowstt
+
+rm -rf ~/Library/Logs/flowstt
+rm -rf ~/Library/Logs/flowstt-app
+
+rm -rf ~/Library/Caches/flowstt
+rm -rf ~/Library/Caches/flowstt-app
+rm -rf ~/Library/Caches/io.flowstt
+rm -rf ~/Library/Caches/com.keath.flowstt
+rm -rf ~/Library/Caches/whisper
+
+rm -rf ~/Library/WebKit/flowstt
+rm -rf ~/Library/WebKit/flowstt-app
+rm -rf ~/Library/WebKit/io.flowstt
+rm -rf ~/Library/WebKit/com.keath.flowstt
+
+rm -rf ~/Library/Saved\ Application\ State/com.keath.flowstt
+rm -rf ~/Library/Saved\ Application\ State/flowstt
+rm -rf ~/Library/Saved\ Application\ State/flowstt-app
+rm -rf ~/Library/Saved\ Application\ State/io.flowstt
+
+rm -f ~/Library/Preferences/flowstt-app.plist
+rm -f ~/Library/Preferences/io.flowstt.plist
+rm -f ~/Library/Preferences/com.keath.flowstt.plist
+
+if [ "$1" = "-a" ]; then
+  # Reset microphone permission for all known bundle IDs
+  # Also reset globally as a fallback (bare binaries are tracked by path)
+  sudo tccutil reset Microphone io.flowstt 2>/dev/null || true
+  sudo tccutil reset Microphone com.keath.flowstt 2>/dev/null || true
   sudo tccutil reset Microphone
+
+  # Reset screen recording permission
+  tccutil reset ScreenCapture io.flowstt 2>/dev/null || true
+  tccutil reset ScreenCapture com.keath.flowstt 2>/dev/null || true
 fi
 
-# Remove accessibility permission
-tccutil reset Accessibility com.keath.flowstt 2>/dev/null || true
+# Reset accessibility permission
 tccutil reset Accessibility io.flowstt 2>/dev/null || true
+tccutil reset Accessibility com.keath.flowstt 2>/dev/null || true

@@ -41,7 +41,8 @@
     "targets": "all",
     "resources": {
       "icons/tray/*": "icons/tray/",
-      "../target/release/flowstt": "binaries/flowstt"
+      "../target/release/flowstt": "binaries/flowstt",
+      "../target/release/libwhisper.dylib": "Frameworks/libwhisper.dylib"
     },
     "windows": {
       "nsis": {
@@ -59,7 +60,8 @@
     ],
     "macOS": {
       "entitlements": "entitlements.plist",
-      "minimumSystemVersion": "12.3"
+      "minimumSystemVersion": "12.3",
+      "infoPlist": "Info.plist"
     }
   }
 }
