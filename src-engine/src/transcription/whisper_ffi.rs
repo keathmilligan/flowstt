@@ -595,7 +595,7 @@ pub fn init_library() -> Result<(), String> {
         // 2. In the current directory
         // 3. macOS app bundle: Contents/Resources/ and Contents/Frameworks/
         // 4. System library paths (handled by libloading)
-        let mut search_paths = vec![
+        let base_paths: [Option<std::path::PathBuf>; 3] = [
             std::env::current_exe()
                 .ok()
                 .and_then(|p| p.parent().map(|p| p.join(lib_name))),
@@ -604,23 +604,26 @@ pub fn init_library() -> Result<(), String> {
         ];
 
         #[cfg(target_os = "macos")]
-        {
-            if let Some(exe_path) = std::env::current_exe()
+        let macos_paths: Vec<Option<std::path::PathBuf>> = if let Some(exe_path) =
+            std::env::current_exe()
                 .ok()
                 .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            {
+        {
+            vec![
                 // Contents/Resources/Frameworks/ - where Tauri bundles resources with subdirectories
-                search_paths.push(Some(
-                    exe_path.join("../Resources/Frameworks").join(lib_name),
-                ));
+                Some(exe_path.join("../Resources/Frameworks").join(lib_name)),
                 // Contents/Resources/ - direct resource location
-                search_paths.push(Some(exe_path.join("../Resources").join(lib_name)));
+                Some(exe_path.join("../Resources").join(lib_name)),
                 // Contents/Frameworks/ - standard macOS location
-                search_paths.push(Some(exe_path.join("../Frameworks").join(lib_name)));
-            }
-        }
+                Some(exe_path.join("../Frameworks").join(lib_name)),
+            ]
+        } else {
+            vec![]
+        };
+        #[cfg(not(target_os = "macos"))]
+        let macos_paths: Vec<Option<std::path::PathBuf>> = vec![];
 
-        for path in search_paths.iter().flatten() {
+        for path in base_paths.iter().chain(macos_paths.iter()).flatten() {
             if path.exists() {
                 // On Windows, add the library's directory to DLL search path
                 // This allows whisper.dll to find its dependencies (ggml-cuda.dll, CUDA runtime, etc.)

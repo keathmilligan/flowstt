@@ -141,9 +141,9 @@ fn main() {
     // Copy all libraries to target directory for runtime
     copy_libraries_to_runtime(&lib_output_dir, &lib_names, &out_dir);
 
-    // macOS: Also copy to release directory for Tauri bundling (even in debug builds)
+    // macOS/Windows: Also copy to release directory for Tauri bundling (even in debug builds)
     // Tauri's build script validates bundle resources exist at configured paths
-    if target_os == "macos" {
+    if target_os == "macos" || target_os == "windows" {
         copy_libraries_for_tauri_bundle(&lib_output_dir, &lib_names, &out_dir);
     }
 
@@ -474,7 +474,7 @@ fn copy_library_to_runtime(lib_path: &Path, lib_name: &str, out_dir: &Path) {
     }
 }
 
-/// Copy libraries to release directory for Tauri bundling (macOS)
+/// Copy libraries to release directory for Tauri bundling (macOS/Windows)
 /// Tauri's build script validates bundle resources exist, even during debug builds
 fn copy_libraries_for_tauri_bundle(lib_dir: &Path, lib_names: &[&str], out_dir: &Path) {
     let target_dir = out_dir
