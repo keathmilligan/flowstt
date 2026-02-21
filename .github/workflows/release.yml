@@ -55,49 +55,33 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            src-tauri -> target
-            src-engine -> target
-            src-common -> target
-            src-cli -> target
 
       - name: TypeScript type check
         run: pnpm exec tsc --noEmit
 
-      - name: Rust lint (clippy) - common library
-        working-directory: src-common
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Rust lint - src-common
+        run: cargo clippy --manifest-path src-common/Cargo.toml --all-targets -- -D warnings
 
-      - name: Rust lint (clippy) - engine library
-        working-directory: src-engine
-        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit
-        run: cargo clippy --all-targets -- -D warnings
+      - name: Rust lint - src-engine
+        run: cargo clippy --manifest-path src-engine/Cargo.toml --all-targets -- -D warnings
 
-      - name: Rust lint (clippy) - main app
-        working-directory: src-tauri
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Rust lint - src-cli
+        run: cargo clippy --manifest-path src-cli/Cargo.toml --all-targets -- -D warnings
 
-      - name: Rust lint (clippy) - CLI
-        working-directory: src-cli
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      # tauri-build validates macOS bundle resource paths at build-script time (even
+      # during clippy). The macOS bundle includes target/release/flowstt and
+      # target/release/libwhisper.dylib. Build both prerequisites first so they exist
+      # when tauri-build executes. The engine step above runs its build script, which
+      # downloads and copies libwhisper.dylib to target/release/ as a side effect.
+      - name: Build CLI release (required for tauri-build resource validation on macOS)
+        if: matrix.platform == 'macos-latest'
+        run: cargo build -p flowstt-cli --release
 
-      - name: Rust tests - common library
-        working-directory: src-common
-        run: cargo test --all-features
+      - name: Rust lint - src-tauri
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
-      - name: Rust tests - engine library
-        working-directory: src-engine
-        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit
-        run: cargo test
-
-      - name: Rust tests - main app
-        working-directory: src-tauri
-        run: cargo test --all-features
-
-      - name: Rust tests - CLI
-        working-directory: src-cli
-        run: cargo test --all-features
+      - name: Rust tests
+        run: cargo test --workspace
 
   build-and-release:
     needs: [test-and-lint]

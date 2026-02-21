@@ -10,12 +10,12 @@ path = "src/lib.rs"
 
 [features]
 default = []
-# Enable CUDA GPU acceleration for transcription
-# - Linux: Requires NVIDIA CUDA Toolkit (nvcc, cuBLAS) installed at build time
-#          whisper.cpp is built from source with -DGGML_CUDA=ON
-# - Windows: CUDA binaries are ALWAYS used (automatic CPU fallback when no GPU available)
-#            This feature has no effect on Windows
-# - macOS: No effect (uses Metal acceleration via prebuilt framework)
+# Enable CUDA GPU acceleration for transcription (Linux only).
+# - Linux: Requires NVIDIA CUDA Toolkit (nvcc, cuBLAS) installed at build time;
+#          whisper.cpp is built from source with -DGGML_CUDA=ON.
+# - Windows: No effect. CUDA-enabled prebuilt binaries are always used regardless
+#            of this flag (automatic CPU fallback when no GPU is present).
+# - macOS: No effect. Metal-accelerated prebuilt xcframework is always used.
 cuda = []
 
 [build-dependencies]

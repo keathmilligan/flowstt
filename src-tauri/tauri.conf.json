@@ -40,9 +40,7 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "icons/tray/*": "icons/tray/",
-      "../target/release/flowstt": "binaries/flowstt",
-      "../target/release/libwhisper.dylib": "Frameworks/libwhisper.dylib"
+      "icons/tray/*": "icons/tray/"
     },
     "windows": {
       "nsis": {

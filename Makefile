@@ -71,12 +71,21 @@ cli: cli-release
 # Run all linters
 lint: lint-rust lint-ts
 
-# Rust linting (all crates)
+# Rust linting (per crate, in order)
+# src-tauri is linted last because tauri-build validates macOS bundle resource paths
+# at build-script time (even during clippy). cli-release produces
+# target/release/flowstt, and building flowstt-engine runs its build script which
+# downloads libwhisper.dylib and copies it to target/release/. Both must exist
+# before tauri-build executes.
 lint-rust: cli-release
-	@echo "==> Ensuring whisper library is cached..."
-	@cargo build -p flowstt-engine 2>/dev/null || true
-	@echo "==> Linting all Rust crates..."
-	cargo clippy --workspace --all-targets --all-features -- -D warnings
+	@echo "==> Linting src-common..."
+	cargo clippy --manifest-path src-common/Cargo.toml --all-targets -- -D warnings
+	@echo "==> Linting src-engine..."
+	cargo clippy --manifest-path src-engine/Cargo.toml --all-targets -- -D warnings
+	@echo "==> Linting src-cli..."
+	cargo clippy --manifest-path src-cli/Cargo.toml --all-targets -- -D warnings
+	@echo "==> Linting src-tauri..."
+	cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
 # TypeScript linting
 lint-ts:
@@ -93,7 +102,7 @@ test: test-rust
 # Rust tests (all crates)
 test-rust:
 	@echo "==> Testing all Rust crates..."
-	cargo test --workspace --all-features
+	cargo test --workspace
 
 # =============================================================================
 # Cleaning

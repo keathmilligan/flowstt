@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "resources": {
+      "../target/release/flowstt": "binaries/flowstt",
+      "../target/release/libwhisper.dylib": "Frameworks/libwhisper.dylib"
+    }
+  }
+}
