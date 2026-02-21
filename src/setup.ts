@@ -474,9 +474,9 @@ async function initAccessibilityStep() {
     return;
   }
 
-  // Trigger the macOS accessibility prompt for the service process automatically.
+  // Trigger the macOS accessibility prompt for the app process automatically.
   // This calls AXIsProcessTrustedWithOptions with the prompt flag, which shows
-  // the system dialog asking the user to grant access to flowstt-service.
+  // the system dialog asking the user to grant access to FlowSTT.
   invoke("open_accessibility_settings").catch(() => {});
 
   // Poll every 500ms until permission is granted

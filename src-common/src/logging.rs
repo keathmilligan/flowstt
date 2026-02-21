@@ -54,12 +54,7 @@ pub fn ensure_log_dir() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-/// Returns the path to the service log file.
-pub fn service_log_path() -> PathBuf {
-    log_dir().join("flowstt-service.log")
-}
-
-/// Returns the path to the Tauri app log file.
+/// Returns the path to the application log file.
 pub fn app_log_path() -> PathBuf {
     log_dir().join("flowstt-app.log")
 }

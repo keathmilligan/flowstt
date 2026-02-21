@@ -7,7 +7,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-# No features needed - all audio/transcription is handled by the service
+[features]
+default = []
+cuda = ["flowstt-engine/cuda"]
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -31,6 +33,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # Shared types and IPC protocol
 flowstt-common = { path = "../src-common" }
+
+# Core engine - audio capture, transcription, IPC server
+flowstt-engine = { path = "../src-engine" }
 
 # Windows-specific dependencies for named pipes and Win32 APIs
 [target.'cfg(target_os = "windows")'.dependencies]

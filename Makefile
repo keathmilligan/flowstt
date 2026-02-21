@@ -2,8 +2,7 @@
 # Build all components for testing
 
 .PHONY: all clean build build-debug build-release build-cuda \
-        frontend service service-cuda app cli \
-        run-service run-service-release run-service-cuda \
+        frontend app cli \
         run-app run-app-release \
         run-cli run-cli-release \
         lint lint-rust lint-ts test \
@@ -17,13 +16,13 @@ all: build
 build: build-release
 
 # Build all components in debug mode (faster compilation)
-build-debug: frontend service-debug app-debug cli-debug
+build-debug: frontend app-debug cli-debug
 
 # Build all components in release mode
-build-release: frontend service-release app-release cli-release
+build-release: frontend app-release cli-release
 
 # Build all components with CUDA acceleration (requires NVIDIA CUDA Toolkit on Linux)
-build-cuda: frontend service-cuda app-release cli-release
+build-cuda: frontend app-cuda cli-release
 
 # =============================================================================
 # Individual Components
@@ -34,36 +33,20 @@ frontend:
 	@echo "==> Building frontend..."
 	pnpm build
 
-# Build flowstt-service (debug)
-service-debug:
-	@echo "==> Building flowstt-service (debug)..."
-	cargo build -p flowstt-service
-
-# Build flowstt-service (release)
-service-release:
-	@echo "==> Building flowstt-service (release)..."
-	cargo build -p flowstt-service --release
-
-# Build flowstt-service with CUDA acceleration (release)
-# Requires: NVIDIA CUDA Toolkit (nvcc, cuBLAS) on Linux
-#           On Windows, CUDA binaries are always used (this has no additional effect)
-#           On macOS, this has no effect (Metal acceleration is always used)
-service-cuda:
-	@echo "==> Building flowstt-service with CUDA (release)..."
-	cargo build -p flowstt-service --release --features cuda
-
-# Alias for release
-service: service-release
-
-# Build flowstt-app/Tauri GUI (debug)
+# Build flowstt-app/Tauri GUI (debug) - includes engine
 app-debug:
 	@echo "==> Building flowstt-app (debug)..."
 	cargo build -p flowstt-app
 
-# Build flowstt-app/Tauri GUI (release)
-app-release: service-release cli-release
+# Build flowstt-app/Tauri GUI (release) - includes engine
+app-release: cli-release
 	@echo "==> Building flowstt-app (release)..."
 	cargo build -p flowstt-app --release
+
+# Build flowstt-app with CUDA acceleration (release)
+app-cuda: cli-release
+	@echo "==> Building flowstt-app with CUDA (release)..."
+	cargo build -p flowstt-app --release --features cuda
 
 # Alias for release
 app: app-release
@@ -139,21 +122,6 @@ install-deps:
 # Development Helpers
 # =============================================================================
 
-# Build and run service in foreground (debug)
-run-service: service-debug
-	@echo "==> Running flowstt-service (debug)..."
-	./target/debug/flowstt-service
-
-# Build and run service in foreground (release)
-run-service-release: service-release
-	@echo "==> Running flowstt-service (release)..."
-	./target/release/flowstt-service
-
-# Build and run service with CUDA in foreground (release)
-run-service-cuda: service-cuda
-	@echo "==> Running flowstt-service with CUDA (release)..."
-	./target/release/flowstt-service
-
 # Build and run GUI app (debug)
 run-app: app-debug
 	@echo "==> Running flowstt-app (debug)..."
@@ -179,7 +147,6 @@ check-binaries:
 	@echo "Checking built binaries..."
 	@test -f target/release/flowstt-app && echo "  [OK] flowstt-app" || echo "  [MISSING] flowstt-app"
 	@test -f target/release/flowstt && echo "  [OK] flowstt" || echo "  [MISSING] flowstt"
-	@test -f target/release/flowstt-service && echo "  [OK] flowstt-service" || echo "  [MISSING] flowstt-service"
 
 # =============================================================================
 # Packaging
@@ -210,11 +177,9 @@ help:
 	@echo "  build-release    Build all components (release mode)"
 	@echo "  build-cuda       Build with CUDA GPU acceleration for transcription"
 	@echo "  frontend         Build frontend only"
-	@echo "  service          Build flowstt-service (release)"
-	@echo "  service-debug    Build flowstt-service (debug)"
-	@echo "  service-cuda     Build flowstt-service with CUDA (release)"
-	@echo "  app              Build flowstt-app GUI (release)"
-	@echo "  app-debug        Build flowstt-app GUI (debug)"
+	@echo "  app              Build flowstt-app (release, includes engine)"
+	@echo "  app-debug        Build flowstt-app (debug)"
+	@echo "  app-cuda         Build flowstt-app with CUDA (release)"
 	@echo "  cli              Build flowstt CLI (release)"
 	@echo "  cli-debug        Build flowstt CLI (debug)"
 	@echo ""
@@ -226,9 +191,6 @@ help:
 	@echo "  test-rust        Run Rust tests on all crates"
 	@echo ""
 	@echo "Run Targets:"
-	@echo "  run-service         Build and run service (debug)"
-	@echo "  run-service-release Build and run service (release)"
-	@echo "  run-service-cuda    Build and run service with CUDA (release)"
 	@echo "  run-app             Build and run GUI app (debug)"
 	@echo "  run-app-release     Build and run GUI app (release)"
 	@echo "  run-cli             Build and run CLI (debug)"

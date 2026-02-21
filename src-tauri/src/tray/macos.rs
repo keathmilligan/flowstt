@@ -8,7 +8,7 @@ use tauri::{
     Manager, WebviewUrl,
 };
 
-use super::{menu_ids, menu_labels, shutdown_service};
+use super::{menu_ids, menu_labels, shutdown_engine};
 
 /// Set up the system tray on macOS.
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -66,7 +66,7 @@ fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent) {
             show_about_window(app);
         }
         id if id == menu_ids::EXIT => {
-            shutdown_service();
+            shutdown_engine();
             app.exit(0);
         }
         _ => {}

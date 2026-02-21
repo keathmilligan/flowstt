@@ -60,7 +60,7 @@ jobs:
         with:
           workspaces: |
             src-tauri -> target
-            src-service -> target
+            src-engine -> target
             src-common -> target
             src-cli -> target
 
@@ -71,8 +71,8 @@ jobs:
         working-directory: src-common
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Rust lint (clippy) - service
-        working-directory: src-service
+      - name: Rust lint (clippy) - engine library
+        working-directory: src-engine
         # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit
         run: cargo clippy --all-targets -- -D warnings
 
@@ -88,8 +88,8 @@ jobs:
         working-directory: src-common
         run: cargo test --all-features
 
-      - name: Rust tests - service
-        working-directory: src-service
+      - name: Rust tests - engine library
+        working-directory: src-engine
         # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit
         run: cargo test
 

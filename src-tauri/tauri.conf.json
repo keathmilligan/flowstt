@@ -41,7 +41,6 @@
     "targets": "all",
     "resources": {
       "icons/tray/*": "icons/tray/",
-      "../target/release/flowstt-service": "binaries/flowstt-service",
       "../target/release/flowstt": "binaries/flowstt"
     },
     "windows": {

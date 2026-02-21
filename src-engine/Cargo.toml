@@ -1,12 +1,12 @@
 [package]
-name = "flowstt-service"
+name = "flowstt-engine"
 version = "0.1.0"
 edition = "2021"
-description = "Background service for FlowSTT voice transcription"
+description = "Core engine for FlowSTT voice transcription - audio capture, processing, and transcription"
 
-[[bin]]
-name = "flowstt-service"
-path = "src/main.rs"
+[lib]
+name = "flowstt_engine"
+path = "src/lib.rs"
 
 [features]
 default = []

@@ -385,7 +385,7 @@ pub fn check_accessibility_permission() -> bool {
 
 /// Prompt macOS to show the Accessibility permission dialog for this process.
 /// This calls AXIsProcessTrustedWithOptions with kAXTrustedCheckOptionPrompt=true,
-/// which causes macOS to add this process (flowstt-service) to the Accessibility list
+/// which causes macOS to add this process (flowstt-app) to the Accessibility list
 /// in System Settings. The user must then toggle it on. Returns the current trust state.
 pub fn request_accessibility_permission() -> bool {
     unsafe {
@@ -443,10 +443,10 @@ impl HotkeyBackend for MacOSHotkeyBackend {
         }
 
         // Check Accessibility permission directly in this process's context.
-        // The service process is the one that creates the CGEventTap, so it must
-        // be the process granted Accessibility access by the user.
+        // The Tauri app process creates the CGEventTap, so it must be the
+        // process granted Accessibility access by the user.
         if !super::check_accessibility_permission() {
-            let msg = "Push-to-Talk requires Accessibility permission to detect hotkeys. Grant permission to flowstt-service in System Settings > Privacy & Security > Accessibility, then restart FlowSTT.".to_string();
+            let msg = "Push-to-Talk requires Accessibility permission to detect hotkeys. Grant permission to FlowSTT in System Settings > Privacy & Security > Accessibility, then restart FlowSTT.".to_string();
             info!("[Hotkey] Accessibility permission not granted: {}", msg);
             self.unavailable_reason = Some(msg.clone());
             return Err(msg);

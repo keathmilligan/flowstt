@@ -1,11 +1,11 @@
-//! IPC client for communicating with the FlowSTT service.
+//! IPC client for communicating with the FlowSTT application.
 
 use flowstt_common::ipc::{get_socket_path, read_json, write_json, IpcError, Request, Response};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-/// IPC client for communicating with the FlowSTT service.
+/// IPC client for communicating with the FlowSTT application.
 pub struct Client {
     #[cfg(unix)]
     stream: Option<tokio::net::UnixStream>,
@@ -21,7 +21,7 @@ impl Client {
         }
     }
 
-    /// Connect to the service.
+    /// Connect to the application.
     pub async fn connect(&mut self) -> Result<(), IpcError> {
         let socket_path = get_socket_path();
 
@@ -45,14 +45,14 @@ impl Client {
         Ok(())
     }
 
-    /// Check if the service is running.
+    /// Check if the application is running.
     #[allow(dead_code)]
-    pub async fn is_service_running() -> bool {
+    pub async fn is_app_running() -> bool {
         let socket_path = get_socket_path();
         socket_path.exists()
     }
 
-    /// Try to connect, spawning the service if needed.
+    /// Try to connect, spawning the application in headless mode if needed.
     /// Returns Ok if connected, Err if connection/spawn failed.
     pub async fn connect_or_spawn(&mut self) -> Result<(), IpcError> {
         // First try to connect
@@ -60,11 +60,11 @@ impl Client {
             return Ok(());
         }
 
-        // Service not running, try to spawn it
-        eprintln!("Service not running, starting...");
-        spawn_service()?;
+        // Application not running, try to spawn it in headless mode
+        eprintln!("Application not running, starting...");
+        spawn_app()?;
 
-        // Wait for service to be ready (up to 5 seconds)
+        // Wait for application to be ready (up to 5 seconds)
         for _ in 0..50 {
             tokio::time::sleep(Duration::from_millis(100)).await;
             if self.connect().await.is_ok() {
@@ -73,7 +73,7 @@ impl Client {
         }
 
         Err(IpcError::ParseError(
-            "Service failed to start within timeout".into(),
+            "Application failed to start within timeout".into(),
         ))
     }
 
@@ -102,7 +102,7 @@ impl Client {
         }
     }
 
-    /// Ping the service.
+    /// Ping the application.
     pub async fn ping(&mut self) -> Result<bool, IpcError> {
         match self.request(Request::Ping).await? {
             Response::Pong => Ok(true),
@@ -112,7 +112,6 @@ impl Client {
     }
 
     /// Subscribe to events. After this, use `read_event()` to read events.
-    /// This connection becomes dedicated to event streaming.
     pub async fn subscribe_events(&mut self) -> Result<(), IpcError> {
         let response = self.request(Request::SubscribeEvents).await?;
         match response {
@@ -123,7 +122,6 @@ impl Client {
     }
 
     /// Read the next event from the stream (blocking).
-    /// Must call `subscribe_events()` first.
     pub async fn read_event(&mut self) -> Result<Response, IpcError> {
         #[cfg(unix)]
         {
@@ -147,57 +145,58 @@ impl Client {
     }
 }
 
-/// Get the path to the service executable.
-fn get_service_path() -> PathBuf {
-    // First, check the standard binaries directory (for installed apps)
-    let data_dir = directories::BaseDirs::new()
-        .map(|b| b.data_local_dir().to_path_buf())
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let binaries_dir = data_dir.join("FlowSTT").join("bin");
-    let extracted_path = binaries_dir.join(if cfg!(windows) {
-        "flowstt-service.exe"
+/// Get the path to the application executable.
+fn get_app_path() -> PathBuf {
+    let app_name = if cfg!(windows) {
+        "flowstt-app.exe"
     } else {
-        "flowstt-service"
-    });
-    if extracted_path.exists() {
-        return extracted_path;
+        "flowstt-app"
+    };
+
+    // macOS: check standard application locations
+    #[cfg(target_os = "macos")]
+    {
+        let mac_app_paths = [
+            PathBuf::from("/Applications/FlowSTT.app/Contents/MacOS/flowstt-app"),
+            dirs::home_dir()
+                .map(|h| h.join("Applications/FlowSTT.app/Contents/MacOS/flowstt-app"))
+                .unwrap_or_default(),
+        ];
+        for path in &mac_app_paths {
+            if path.exists() {
+                return path.clone();
+            }
+        }
     }
 
-    // Try to find the service binary next to the CLI binary (development or bundled)
+    // Check next to the CLI binary (development or bundled)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(dir) = exe_path.parent() {
-            let service_path = dir.join(if cfg!(windows) {
-                "flowstt-service.exe"
-            } else {
-                "flowstt-service"
-            });
-            if service_path.exists() {
-                return service_path;
+            let app_path = dir.join(app_name);
+            if app_path.exists() {
+                return app_path;
             }
         }
     }
 
     // Fall back to PATH
-    PathBuf::from(if cfg!(windows) {
-        "flowstt-service.exe"
-    } else {
-        "flowstt-service"
-    })
+    PathBuf::from(app_name)
 }
 
-/// Spawn the service process.
-fn spawn_service() -> Result<Child, IpcError> {
-    let service_path = get_service_path();
+/// Spawn the application process in headless mode.
+fn spawn_app() -> Result<Child, IpcError> {
+    let app_path = get_app_path();
 
-    Command::new(&service_path)
+    Command::new(&app_path)
+        .arg("--headless")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| {
             IpcError::ParseError(format!(
-                "Failed to spawn service at {:?}: {}",
-                service_path, e
+                "Failed to spawn application at {:?}: {}",
+                app_path, e
             ))
         })
 }

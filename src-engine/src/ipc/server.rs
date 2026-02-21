@@ -31,13 +31,13 @@ fn get_client_count() -> usize {
     CLIENT_COUNT.load(Ordering::SeqCst)
 }
 
-/// Event broadcaster for subscribed clients
+/// Event broadcaster for subscribed IPC clients
 pub type EventSender = broadcast::Sender<Response>;
 
 /// Get or create the global event broadcaster
 static EVENT_BROADCASTER: std::sync::OnceLock<EventSender> = std::sync::OnceLock::new();
 
-/// Get the global event broadcaster for sending events to subscribed clients.
+/// Get the global event broadcaster for sending events to subscribed IPC clients.
 pub fn get_event_sender() -> EventSender {
     EVENT_BROADCASTER
         .get_or_init(|| {
@@ -47,71 +47,100 @@ pub fn get_event_sender() -> EventSender {
         .clone()
 }
 
-/// Broadcast an event to all subscribed clients.
-/// When no clients are subscribed, log the event instead of silently dropping it.
+/// External event callback trait for forwarding engine events to non-IPC consumers
+/// (e.g., Tauri frontend via app_handle.emit()).
+pub trait EventCallback: Send + Sync + 'static {
+    fn on_event(&self, event: &EventType);
+}
+
+/// Global external event callback (registered by Tauri app at startup)
+static EXTERNAL_EVENT_CALLBACK: std::sync::OnceLock<Box<dyn EventCallback>> =
+    std::sync::OnceLock::new();
+
+/// Register an external event callback.
+/// This should be called once during Tauri app setup to forward engine events
+/// directly to the frontend via Tauri emit(), bypassing IPC serialization.
+pub fn register_event_callback(callback: impl EventCallback) {
+    let _ = EXTERNAL_EVENT_CALLBACK.set(Box::new(callback));
+}
+
+/// Broadcast an event to all subscribed IPC clients and to the external callback.
+/// When no IPC clients are subscribed and no external callback is registered,
+/// log the event instead of silently dropping it.
 pub fn broadcast_event(event: Response) {
+    // First, forward to external callback (Tauri frontend) if registered
+    if let Response::Event { event: ref evt } = event {
+        if let Some(callback) = EXTERNAL_EVENT_CALLBACK.get() {
+            callback.on_event(evt);
+        }
+    }
+
+    // Then, send to subscribed IPC clients
     let sender = get_event_sender();
     if sender.receiver_count() == 0 {
-        // No clients subscribed - log based on event type
-        if let Response::Event { ref event } = event {
-            match event {
-                EventType::TranscriptionComplete(result) => {
-                    info!("Transcription complete (no clients): {}", result.text);
-                }
-                EventType::VisualizationData(_) => {
-                    // High-frequency event - use debug level
-                    debug!("Visualization data generated (no clients)");
-                }
-                EventType::SpeechStarted => {
-                    debug!("Speech started (no clients)");
-                }
-                EventType::SpeechEnded { duration_ms } => {
-                    debug!("Speech ended (no clients): {}ms", duration_ms);
-                }
-                EventType::CaptureStateChanged { capturing, error } => {
-                    info!(
-                        "Capture state changed (no clients): capturing={}, error={:?}",
-                        capturing, error
-                    );
-                }
-                EventType::PttPressed => {
-                    info!("PTT pressed (no clients)");
-                }
-                EventType::PttReleased => {
-                    info!("PTT released (no clients)");
-                }
-                EventType::TranscriptionModeChanged { mode } => {
-                    info!("Transcription mode changed (no clients): {:?}", mode);
-                }
-                EventType::ModelDownloadProgress { percent } => {
-                    info!("Model download progress (no clients): {}%", percent);
-                }
-                EventType::ModelDownloadComplete { success } => {
-                    info!("Model download complete (no clients): success={}", success);
-                }
-                EventType::AudioLevelUpdate {
-                    ref device_id,
-                    level_db,
-                } => {
-                    debug!(
-                        "Audio level update (no clients): device={}, level={:.1}dB",
-                        device_id, level_db
-                    );
-                }
-                EventType::HistoryEntryDeleted { ref id } => {
-                    info!("History entry deleted (no clients): {}", id);
-                }
-                EventType::AutoModeToggled { mode } => {
-                    info!("Auto mode toggled (no clients): {:?}", mode);
-                }
-                EventType::Shutdown => {
-                    info!("Shutdown event (no clients)");
+        // No IPC clients subscribed - log based on event type
+        // (skip logging if external callback is registered, since events are being consumed)
+        if EXTERNAL_EVENT_CALLBACK.get().is_none() {
+            if let Response::Event { ref event } = event {
+                match event {
+                    EventType::TranscriptionComplete(result) => {
+                        info!("Transcription complete (no clients): {}", result.text);
+                    }
+                    EventType::VisualizationData(_) => {
+                        // High-frequency event - use debug level
+                        debug!("Visualization data generated (no clients)");
+                    }
+                    EventType::SpeechStarted => {
+                        debug!("Speech started (no clients)");
+                    }
+                    EventType::SpeechEnded { duration_ms } => {
+                        debug!("Speech ended (no clients): {}ms", duration_ms);
+                    }
+                    EventType::CaptureStateChanged { capturing, error } => {
+                        info!(
+                            "Capture state changed (no clients): capturing={}, error={:?}",
+                            capturing, error
+                        );
+                    }
+                    EventType::PttPressed => {
+                        info!("PTT pressed (no clients)");
+                    }
+                    EventType::PttReleased => {
+                        info!("PTT released (no clients)");
+                    }
+                    EventType::TranscriptionModeChanged { mode } => {
+                        info!("Transcription mode changed (no clients): {:?}", mode);
+                    }
+                    EventType::ModelDownloadProgress { percent } => {
+                        info!("Model download progress (no clients): {}%", percent);
+                    }
+                    EventType::ModelDownloadComplete { success } => {
+                        info!("Model download complete (no clients): success={}", success);
+                    }
+                    EventType::AudioLevelUpdate {
+                        ref device_id,
+                        level_db,
+                    } => {
+                        debug!(
+                            "Audio level update (no clients): device={}, level={:.1}dB",
+                            device_id, level_db
+                        );
+                    }
+                    EventType::HistoryEntryDeleted { ref id } => {
+                        info!("History entry deleted (no clients): {}", id);
+                    }
+                    EventType::AutoModeToggled { mode } => {
+                        info!("Auto mode toggled (no clients): {:?}", mode);
+                    }
+                    EventType::Shutdown => {
+                        info!("Shutdown event (no clients)");
+                    }
                 }
             }
         }
         return;
     }
-    // Send to subscribed clients (ignore lagged errors)
+    // Send to subscribed IPC clients (ignore lagged errors)
     let _ = sender.send(event);
 }
 

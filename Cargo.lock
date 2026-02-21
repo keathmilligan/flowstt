@@ -1159,6 +1159,7 @@ version = "0.1.0"
 dependencies = [
  "dirs 5.0.1",
  "flowstt-common",
+ "flowstt-engine",
  "serde",
  "serde_json",
  "tauri",
@@ -1178,6 +1179,7 @@ dependencies = [
  "colored",
  "crossterm",
  "directories",
+ "dirs 6.0.0",
  "flowstt-common",
  "serde",
  "serde_json",
@@ -1198,7 +1200,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "flowstt-service"
+name = "flowstt-engine"
 version = "0.1.0"
 dependencies = [
  "aec3",

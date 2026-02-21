@@ -1,4 +1,4 @@
-//! Build script for flowstt-service
+//! Build script for flowstt-engine
 //!
 //! Handles downloading/building whisper.cpp library for transcription.
 

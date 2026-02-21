@@ -82,15 +82,14 @@ Global flags: `--format json` for machine output, `-q/--quiet`, `-v/--verbose`.
 
 ### Architecture
 
-FlowSTT runs as three cooperating binaries:
+FlowSTT runs as two binaries:
 
 | Binary | Role |
 |--------|------|
-| `flowstt-service` | Background daemon for audio capture and transcription |
+| `flowstt-app` | Tauri 2.0 desktop application with integrated audio engine, transcription, and IPC server |
 | `flowstt` | CLI for headless operation and scripting |
-| `flowstt-app` | Tauri 2.0 desktop GUI |
 
-Clients communicate with the service over platform-native IPC (Unix sockets on Linux/macOS, named pipes on Windows).
+The CLI communicates with the app over platform-native IPC (Unix sockets on Linux/macOS, named pipes on Windows). The app can be started in headless mode (`--headless`) for CLI-only usage.
 
 ### Build
 

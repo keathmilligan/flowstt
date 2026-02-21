@@ -2,8 +2,8 @@
 
 pub mod peer_verify;
 
-/// Executable names permitted to connect to the service.
-pub const TRUSTED_EXECUTABLES: &[&str] = &["flowstt", "flowstt-service", "flowstt-app"];
+/// Executable names permitted to connect to the IPC server.
+pub const TRUSTED_EXECUTABLES: &[&str] = &["flowstt", "flowstt-app"];
 
 /// Trusted installation directories (Linux).
 #[cfg(target_os = "linux")]
