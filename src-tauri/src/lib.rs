@@ -675,6 +675,7 @@ pub fn run() {
     configure_wayland_workarounds();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             ipc_server_handle: Mutex::new(None),
         })

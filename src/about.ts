@@ -1,19 +1,22 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
+import { open } from "@tauri-apps/plugin-shell";
 import { initTheme, getResolvedTheme, onThemeChange } from "./theme";
 
 import logoLight from "./assets/flowstt-portrait-light.svg";
 import logoDark from "./assets/flowstt-portrait.svg";
 
-const WEBSITE_URL = "https://github.com/keathmilligan/flowstt";
-const GITHUB_URL = "https://github.com/keathmilligan/flowstt";
-const LICENSE_URL = "https://github.com/keathmilligan/flowstt/blob/main/LICENSE";
+const WEBSITE_URL = "https://flowstt.io";
+const GITHUB_URL = "https://github.com/flowstt/flowstt";
+const LICENSE_URL = "https://github.com/flowstt/flowstt/blob/master/LICENSE";
 
 /**
  * Open an external URL in the default browser.
  */
 function openExternal(url: string) {
-    window.open(url, "_blank");
+    void open(url).catch((error) => {
+        console.error("Failed to open external link:", error);
+    });
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
