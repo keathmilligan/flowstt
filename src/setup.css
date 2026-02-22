@@ -132,6 +132,14 @@ body {
     margin-bottom: 20px;
 }
 
+.step-note {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-top: -12px;
+    margin-bottom: 20px;
+}
+
 /* Buttons */
 .btn {
     padding: 8px 20px;
@@ -345,51 +353,7 @@ select {
     padding-right: 1.8em;
 }
 
-/* Step 3: Mode Selection */
-.mode-options {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 16px;
-}
-
-.mode-option {
-    cursor: pointer;
-}
-
-.mode-option input[type="radio"] {
-    display: none;
-}
-
-.mode-card {
-    padding: 12px 16px;
-    background: var(--surface-input);
-    border: 1px solid var(--border-default);
-    border-radius: 6px;
-    transition: border-color 0.15s, background 0.15s;
-}
-
-.mode-card strong {
-    display: block;
-    font-size: 0.9rem;
-    color: var(--text-primary);
-    margin-bottom: 4px;
-}
-
-.mode-card span {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    line-height: 1.4;
-}
-
-.mode-option input[type="radio"]:checked + .mode-card {
-    border-color: var(--btn-primary-bg);
-    background: rgba(57, 108, 216, 0.1);
-}
-
-.mode-option:hover .mode-card {
-    border-color: var(--border-hover);
-}
+/* Step 3: Hotkey Setup */
 
 .hotkey-section {
     display: flex;

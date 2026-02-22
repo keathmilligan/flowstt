@@ -79,12 +79,12 @@ function isDebugConsoleHotkey(e: KeyboardEvent): boolean {
 const isMacOS = navigator.platform.toLowerCase().includes("mac");
 
 // Ordered list of step IDs that are active in this session.
-// "step-accessibility" is inserted only on macOS + PTT mode.
+// "step-accessibility" is inserted only on macOS.
 let activeSteps: string[] = [];
 
 function buildActiveSteps(): string[] {
   const steps = ["step-1", "step-2", "step-3"];
-  if (isMacOS && transcriptionMode === "push_to_talk") {
+  if (isMacOS) {
     steps.push("step-accessibility");
   }
   steps.push("step-4");
@@ -97,7 +97,7 @@ let currentStepIndex = 0;
 let modelDownloaded = false;
 let selectedDeviceId: string | null = null;
 let selectedSystemDeviceId: string | null = null;
-let transcriptionMode: "automatic" | "push_to_talk" = "push_to_talk";
+const transcriptionMode: "push_to_talk" = "push_to_talk";
 let pttHotkey: HotkeyCombination = { keys: ["right_alt"] };
 let isRecordingHotkey = false;
 let recordedKeys: Set<string> = new Set();
@@ -127,7 +127,6 @@ let levelMeterSection: HTMLDivElement;
 let levelMeterFill: HTMLDivElement;
 let levelLabel: HTMLSpanElement;
 let systemDeviceSelect: HTMLSelectElement;
-let hotkeySection: HTMLDivElement;
 let hotkeyLabel: HTMLSpanElement;
 let changeHotkeyBtn: HTMLButtonElement;
 let hotkeyRecorder: HTMLDivElement;
@@ -439,26 +438,11 @@ async function selectDevice(deviceId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 3: Mode Selection
+// Step 3: Hotkey Setup
 // ---------------------------------------------------------------------------
 
 function initModeStep() {
-  const modeRadios = document.querySelectorAll<HTMLInputElement>('input[name="mode"]');
-  modeRadios.forEach((radio) => {
-    radio.checked = radio.value === transcriptionMode;
-  });
-  hotkeySection.classList.toggle("hidden", transcriptionMode === "automatic");
   hotkeyLabel.textContent = pttHotkey.keys.map(keyDisplayName).join(" + ");
-}
-
-function onModeChange(mode: string) {
-  transcriptionMode = mode as "automatic" | "push_to_talk";
-  hotkeySection.classList.toggle("hidden", mode === "automatic");
-  // Rebuild active step list when mode changes (accessibility step is conditional)
-  activeSteps = buildActiveSteps();
-  // Re-render indicator to reflect new total
-  renderStepIndicator();
-  updateNextEnabled();
 }
 
 // ---------------------------------------------------------------------------
@@ -580,12 +564,8 @@ function onAccessibilityGranted() {
 async function initTestStep() {
   testResult.innerHTML = '<p class="test-placeholder">Transcribed text will appear here...</p>';
 
-  if (transcriptionMode === "push_to_talk") {
-    const keyNames = pttHotkey.keys.map(keyDisplayName).join(" + ");
-    testInstructions.innerHTML = `Press and hold <strong>${keyNames}</strong>, then speak to verify everything works.`;
-  } else {
-    testInstructions.innerHTML = "Speak to verify everything works. Transcription starts automatically.";
-  }
+  const keyNames = pttHotkey.keys.map(keyDisplayName).join(" + ");
+  testInstructions.innerHTML = `Press and hold <strong>${keyNames}</strong>, then speak to verify everything works.`;
 
   setTestMiniWaveformSlotActive(false);
   await setupTestMiniWaveformListeners();
@@ -772,7 +752,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   levelMeterFill = document.getElementById("level-meter-fill") as HTMLDivElement;
   levelLabel = document.getElementById("level-label") as HTMLSpanElement;
   systemDeviceSelect = document.getElementById("system-device-select") as HTMLSelectElement;
-  hotkeySection = document.getElementById("hotkey-section") as HTMLDivElement;
   hotkeyLabel = document.getElementById("hotkey-label") as HTMLSpanElement;
   changeHotkeyBtn = document.getElementById("change-hotkey-btn") as HTMLButtonElement;
   hotkeyRecorder = document.getElementById("hotkey-recorder") as HTMLDivElement;
@@ -822,11 +801,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   backBtn.addEventListener("click", handleBack);
   skipLink.addEventListener("click", (e) => { e.preventDefault(); skipSetup(); });
   downloadBtn.addEventListener("click", startDownload);
-
-  // Mode selection
-  document.querySelectorAll<HTMLInputElement>('input[name="mode"]').forEach((radio) => {
-    radio.addEventListener("change", () => onModeChange(radio.value));
-  });
 
   // Hotkey recording
   changeHotkeyBtn.addEventListener("click", startHotkeyRecording);
