@@ -146,7 +146,8 @@ const updateReadme = async (filePath) => {
     "",
     "**Download packages**",
     `- Windows: [FlowSTT_${version}_x64.msi](${baseUrl}/FlowSTT_${version}_x64.msi)`,
-    `- macOS: [FlowSTT_aarch64.dmg](${baseUrl}/FlowSTT_aarch64.dmg), [FlowSTT_x64.dmg](${baseUrl}/FlowSTT_x64.dmg)`,
+    `- macOS (Apple Silicon M-Series): [FlowSTT_aarch64.dmg](${baseUrl}/FlowSTT_aarch64.dmg)`,
+    `- macOS (Legacy Intel x64): [FlowSTT_x64.dmg](${baseUrl}/FlowSTT_x64.dmg)`,
     "<!-- release-links:end -->",
   ].join("\n");
 

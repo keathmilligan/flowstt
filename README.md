@@ -21,7 +21,7 @@ FlowSTT is a free, privacy-first speech-to-text application that runs entirely o
 
 ## Installation
 
-Download the latest release from the [Releases page](https://github.com/keath/flowstt/releases).
+Download the latest release from the [Releases page](https://github.com/flowstt/flowstt/releases).
 
 <!-- release-links:start -->
 **Current release:** v0.1.1
