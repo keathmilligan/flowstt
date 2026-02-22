@@ -24,16 +24,17 @@ FlowSTT is a free, privacy-first speech-to-text application that runs entirely o
 Download the latest release from the [Releases page](https://github.com/flowstt/flowstt/releases).
 
 <!-- release-links:start -->
-**Current release:** v0.1.1
+**Current release:** v0.1.2
 
 **Download packages**
-- Windows: [FlowSTT_0.1.1_x64.msi](https://github.com/flowstt/flowstt/releases/download/v0.1.1/FlowSTT_0.1.1_x64.msi)
-- macOS: [FlowSTT_aarch64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.1/FlowSTT_aarch64.dmg), [FlowSTT_x64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.1/FlowSTT_x64.dmg)
+- Windows: [FlowSTT_0.1.2_x64.msi](https://github.com/flowstt/flowstt/releases/download/v0.1.2/FlowSTT_0.1.2_x64.msi)
+- macOS (Apple Silicon M-Series): [FlowSTT_aarch64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.2/FlowSTT_aarch64.dmg)
+- macOS (Legacy Intel x64): [FlowSTT_x64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.2/FlowSTT_x64.dmg)
 <!-- release-links:end -->
 
 ### Windows
 
-1. Download `FlowSTT_0.1.1_x64.msi`
+1. Download `FlowSTT_0.1.2_x64.msi`
 2. Run the installer
 3. If Windows SmartScreen shows a warning, click **"More info"** then **"Run anyway"**
 4. Launch FlowSTT from the Start Menu or Desktop shortcut
