@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { MiniWaveformRenderer, VisualizationPayload } from "./renderers";
 import { initTheme } from "./theme";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,11 @@ interface HotkeyCombination {
 
 interface TranscriptionResult {
   text: string;
+}
+
+interface CaptureStatus {
+  capturing: boolean;
+  error: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +107,11 @@ let releaseTimer: number | null = null;
 // Accessibility permission polling
 let accessibilityPollInterval: number | null = null;
 
+// Test mini-visualizer
+let testMiniWaveformRenderer: MiniWaveformRenderer | null = null;
+let testVisualizationUnlisten: UnlistenFn | null = null;
+let testCaptureStateUnlisten: UnlistenFn | null = null;
+
 // ---------------------------------------------------------------------------
 // DOM refs (filled on DOMContentLoaded)
 // ---------------------------------------------------------------------------
@@ -123,6 +134,8 @@ let hotkeyRecorder: HTMLDivElement;
 let recorderStatus: HTMLSpanElement;
 let testInstructions: HTMLParagraphElement;
 let testResult: HTMLDivElement;
+let testMiniWaveformCanvas: HTMLCanvasElement;
+let testMiniWaveformHelp: HTMLDivElement;
 let backBtn: HTMLButtonElement;
 let nextBtn: HTMLButtonElement;
 let skipLink: HTMLAnchorElement;
@@ -157,9 +170,14 @@ function renderStepIndicator() {
 }
 
 function showStepById(stepId: string) {
+  const previousStepId = activeSteps[currentStepIndex];
   // Clear accessibility polling when leaving that step
   if (activeSteps[currentStepIndex] === "step-accessibility") {
     clearAccessibilityPoll();
+  }
+
+  if (previousStepId === "step-4" && stepId !== "step-4") {
+    teardownTestMiniWaveform();
   }
 
   // Hide all steps
@@ -198,6 +216,57 @@ function showStepById(stepId: string) {
   if (stepId === "step-3") initModeStep();
   if (stepId === "step-accessibility") initAccessibilityStep();
   if (stepId === "step-4") initTestStep();
+}
+
+function setTestMiniWaveformSlotActive(active: boolean) {
+  if (testMiniWaveformCanvas) {
+    testMiniWaveformCanvas.style.display = active ? "block" : "none";
+  }
+  if (testMiniWaveformHelp) {
+    testMiniWaveformHelp.style.display = active ? "none" : "flex";
+  }
+}
+
+function updateTestMiniWaveformState(capturing: boolean) {
+  if (capturing) {
+    setTestMiniWaveformSlotActive(true);
+    testMiniWaveformRenderer?.resize();
+    testMiniWaveformRenderer?.clear();
+    testMiniWaveformRenderer?.start();
+  } else {
+    testMiniWaveformRenderer?.stop();
+    testMiniWaveformRenderer?.clear();
+    setTestMiniWaveformSlotActive(false);
+  }
+}
+
+async function setupTestMiniWaveformListeners(): Promise<void> {
+  if (!testVisualizationUnlisten) {
+    testVisualizationUnlisten = await listen<VisualizationPayload>("visualization-data", (event) => {
+      if (activeSteps[currentStepIndex] !== "step-4") return;
+      testMiniWaveformRenderer?.pushSamples(event.payload.waveform);
+    });
+  }
+
+  if (!testCaptureStateUnlisten) {
+    testCaptureStateUnlisten = await listen<CaptureStatus>("capture-state-changed", (event) => {
+      if (activeSteps[currentStepIndex] !== "step-4") return;
+      if (event.payload.error) {
+        console.error("[Setup] Capture error:", event.payload.error);
+      }
+      updateTestMiniWaveformState(event.payload.capturing);
+    });
+  }
+}
+
+function teardownTestMiniWaveform() {
+  testVisualizationUnlisten?.();
+  testVisualizationUnlisten = null;
+  testCaptureStateUnlisten?.();
+  testCaptureStateUnlisten = null;
+  testMiniWaveformRenderer?.stop();
+  testMiniWaveformRenderer?.clear();
+  setTestMiniWaveformSlotActive(false);
 }
 
 function updateNextEnabled() {
@@ -518,6 +587,15 @@ async function initTestStep() {
     testInstructions.innerHTML = "Speak to verify everything works. Transcription starts automatically.";
   }
 
+  setTestMiniWaveformSlotActive(false);
+  await setupTestMiniWaveformListeners();
+  try {
+    const status = await invoke<CaptureStatus>("get_status");
+    updateTestMiniWaveformState(status.capturing);
+  } catch {
+    updateTestMiniWaveformState(false);
+  }
+
   // Stop the device test capture before starting real capture
   try {
     await invoke("stop_test_audio_device");
@@ -701,6 +779,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   recorderStatus = document.getElementById("recorder-status") as HTMLSpanElement;
   testInstructions = document.getElementById("test-instructions") as HTMLParagraphElement;
   testResult = document.getElementById("test-result") as HTMLDivElement;
+  testMiniWaveformCanvas = document.getElementById("test-mini-waveform") as HTMLCanvasElement;
+  testMiniWaveformHelp = document.getElementById("test-mini-waveform-help") as HTMLDivElement;
   backBtn = document.getElementById("back-btn") as HTMLButtonElement;
   nextBtn = document.getElementById("next-btn") as HTMLButtonElement;
   skipLink = document.getElementById("skip-link") as HTMLAnchorElement;
@@ -714,6 +794,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     openAccessibilityBtn.addEventListener("click", () => {
       invoke("open_accessibility_settings").catch(() => {});
     });
+  }
+
+  if (testMiniWaveformCanvas) {
+    testMiniWaveformRenderer = new MiniWaveformRenderer(testMiniWaveformCanvas, 64);
+  }
+
+  if (testMiniWaveformHelp) {
+    testMiniWaveformHelp.textContent = "Waiting for audio...";
   }
 
   // Close button - exits the entire application since setup is incomplete
@@ -748,6 +836,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   // System device change
   systemDeviceSelect.addEventListener("change", () => {
     selectedSystemDeviceId = systemDeviceSelect.value || null;
+  });
+
+  window.addEventListener("resize", () => {
+    if (activeSteps[currentStepIndex] === "step-4") {
+      testMiniWaveformRenderer?.resize();
+    }
   });
 
   // Connect to service event stream

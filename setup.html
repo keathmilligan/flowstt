@@ -112,6 +112,10 @@
                 <h2 class="step-title">Test Your Setup</h2>
                 <p class="step-desc" id="test-instructions">Press and hold <strong>Right Alt</strong>, then speak to verify everything works.</p>
                 <div class="test-area">
+                    <div class="test-mini-visualizer" aria-live="polite">
+                        <canvas id="test-mini-waveform" class="test-mini-waveform" aria-hidden="true"></canvas>
+                        <div id="test-mini-waveform-help" class="test-mini-waveform-help">Waiting for audio...</div>
+                    </div>
                     <div class="test-result" id="test-result">
                         <p class="test-placeholder">Transcribed text will appear here...</p>
                     </div>

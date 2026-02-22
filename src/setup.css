@@ -431,6 +431,39 @@ select {
     gap: 12px;
 }
 
+.test-mini-visualizer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    width: 140px;
+    background: var(--surface-input);
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+}
+
+.test-mini-waveform {
+    display: none;
+    width: 100%;
+    height: 100%;
+}
+
+.test-mini-waveform-help {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 0 6px;
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--mini-waveform-help-text);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .test-waveform-container {
     height: 60px;
     background: var(--surface-panel);
