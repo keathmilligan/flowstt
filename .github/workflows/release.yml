@@ -9,6 +9,7 @@ env:
 
 jobs:
   test-and-lint:
+    if: ${{ github.event.release.draft == true }}
     strategy:
       fail-fast: true
       matrix:
@@ -84,6 +85,7 @@ jobs:
         run: cargo test --workspace
 
   build-and-release:
+    if: ${{ github.event.release.draft == true }}
     needs: [test-and-lint]
     permissions:
       contents: write
@@ -156,6 +158,7 @@ jobs:
           args: ${{ matrix.args }}
 
   generate-update-json:
+    if: ${{ github.event.release.draft == true }}
     needs: [build-and-release]
     permissions:
       contents: write

@@ -7,7 +7,7 @@ FlowSTT uses GitHub Actions for CI/CD. Workflows run automatically on push to `m
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `ci.yml` | Push to `master`, PRs | Lint, type-check, and test |
-| `release.yml` | Tags `v*.*.*` | Build and publish releases |
+| `release.yml` | Draft release created | Build and publish releases |
 
 ## Local CI Testing with `act`
 
