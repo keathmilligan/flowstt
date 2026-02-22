@@ -1,15 +1,15 @@
 name: Release
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - "v*"
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   test-and-lint:
-    if: ${{ github.event.release.draft == true }}
     strategy:
       fail-fast: true
       matrix:
@@ -85,7 +85,6 @@ jobs:
         run: cargo test --workspace
 
   build-and-release:
-    if: ${{ github.event.release.draft == true }}
     needs: [test-and-lint]
     permissions:
       contents: write
@@ -154,11 +153,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          releaseId: ${{ github.event.release.id }}
+          tagName: ${{ github.ref_name }}
+          releaseName: "FlowSTT ${{ github.ref_name }}"
+          releaseBody: "See the assets to download this version and install."
+          releaseDraft: true
+          prerelease: false
           args: ${{ matrix.args }}
 
   generate-update-json:
-    if: ${{ github.event.release.draft == true }}
     needs: [build-and-release]
     permissions:
       contents: write
@@ -171,11 +173,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
 
           # Get the release assets
-          ASSETS=$(gh release view "${{ github.event.release.tag_name }}" --repo ${{ github.repository }} --json assets -q '.assets')
+          ASSETS=$(gh release view "${{ github.ref_name }}" --repo ${{ github.repository }} --json assets -q '.assets')
 
           # Build the update JSON
           # For now, we'll create a basic structure - the signature will need to be added when we have signing
@@ -204,4 +206,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" latest.json --clobber
+          gh release upload "${{ github.ref_name }}" latest.json --clobber
