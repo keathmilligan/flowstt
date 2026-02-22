@@ -1,8 +1,8 @@
 {
   "bundle": {
+    "targets": ["msi"],
     "resources": {
-      "../target/release/*.dll": "binaries/",
-      "../target/debug/*.dll": "binaries/"
+      "../target/release/*.dll": "binaries/"
     }
   }
 }

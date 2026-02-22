@@ -7,7 +7,7 @@
 
 use libloading::Library;
 use std::ffi::{c_char, c_float, c_int, CStr, CString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// Opaque pointer to whisper_context
@@ -506,15 +506,17 @@ fn init_ggml_backends() {
             };
 
             // Search paths in order of preference
-            let search_paths = [
-                std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(|p| p.join(lib_name))),
-                Some(std::env::current_dir().unwrap_or_default().join(lib_name)),
-                Some(std::path::PathBuf::from(lib_name)),
-            ];
+            let mut search_paths: Vec<PathBuf> = Vec::new();
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(parent) = exe_path.parent() {
+                    search_paths.push(parent.join(lib_name));
+                }
+            }
+            search_paths.push(std::env::current_dir().unwrap_or_default().join(lib_name));
+            search_paths.extend(resource_dir_paths(lib_name));
+            search_paths.push(std::path::PathBuf::from(lib_name));
 
-            for path in search_paths.iter().flatten() {
+            for path in search_paths.iter() {
                 if path.exists() {
                     // Get the directory containing the library
                     let lib_dir = path.parent().map(|p| p.to_path_buf());
@@ -593,37 +595,39 @@ pub fn init_library() -> Result<(), String> {
         // Search paths in order of preference:
         // 1. Next to the executable
         // 2. In the current directory
+        // 3. In the bundled resource directory (Windows)
         // 3. macOS app bundle: Contents/Resources/ and Contents/Frameworks/
         // 4. System library paths (handled by libloading)
-        let base_paths: [Option<std::path::PathBuf>; 3] = [
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|p| p.join(lib_name))),
-            Some(std::env::current_dir().unwrap_or_default().join(lib_name)),
-            Some(std::path::PathBuf::from(lib_name)),
-        ];
+        let mut base_paths: Vec<PathBuf> = Vec::new();
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                base_paths.push(parent.join(lib_name));
+            }
+        }
+        base_paths.push(std::env::current_dir().unwrap_or_default().join(lib_name));
+        base_paths.extend(resource_dir_paths(lib_name));
+        base_paths.push(std::path::PathBuf::from(lib_name));
 
         #[cfg(target_os = "macos")]
-        let macos_paths: Vec<Option<std::path::PathBuf>> = if let Some(exe_path) =
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        let macos_paths: Vec<PathBuf> = if let Some(exe_path) = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
         {
             vec![
                 // Contents/Resources/Frameworks/ - where Tauri bundles resources with subdirectories
-                Some(exe_path.join("../Resources/Frameworks").join(lib_name)),
+                exe_path.join("../Resources/Frameworks").join(lib_name),
                 // Contents/Resources/ - direct resource location
-                Some(exe_path.join("../Resources").join(lib_name)),
+                exe_path.join("../Resources").join(lib_name),
                 // Contents/Frameworks/ - standard macOS location
-                Some(exe_path.join("../Frameworks").join(lib_name)),
+                exe_path.join("../Frameworks").join(lib_name),
             ]
         } else {
             vec![]
         };
         #[cfg(not(target_os = "macos"))]
-        let macos_paths: Vec<Option<std::path::PathBuf>> = vec![];
+        let macos_paths: Vec<PathBuf> = vec![];
 
-        for path in base_paths.iter().chain(macos_paths.iter()).flatten() {
+        for path in base_paths.iter().chain(macos_paths.iter()) {
             if path.exists() {
                 // On Windows, add the library's directory to DLL search path
                 // This allows whisper.dll to find its dependencies (ggml-cuda.dll, CUDA runtime, etc.)
@@ -666,6 +670,18 @@ pub fn init_library() -> Result<(), String> {
     } else {
         Err("Whisper library not available".to_string())
     }
+}
+
+fn resource_dir_paths(lib_name: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Ok(resource_dir) = std::env::var("FLOWSTT_RESOURCE_DIR") {
+        if !resource_dir.is_empty() {
+            let base = PathBuf::from(resource_dir);
+            paths.push(base.join(lib_name));
+            paths.push(base.join("binaries").join(lib_name));
+        }
+    }
+    paths
 }
 
 /// Get the loaded library or return an error

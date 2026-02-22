@@ -684,6 +684,11 @@ pub fn run() {
                 app_t0.elapsed().as_millis()
             );
 
+            #[cfg(windows)]
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                env::set_var("FLOWSTT_RESOURCE_DIR", resource_dir);
+            }
+
             let app_handle = app.handle().clone();
 
             // Register event callback so engine events go directly to Tauri frontend
