@@ -13,10 +13,10 @@ FlowSTT is a free, privacy-first speech-to-text application that runs entirely o
 ## Features
 
 - **Local transcription** — Offline Whisper inference via whisper.cpp
-- **Hardware accelerated** — CUDA on Windows/Linux, Metal on macOS
+- **Hardware accelerated** — CUDA on Windows, Metal on macOS
 - **Real-time visualization** — Waveform, spectrogram, and speech activity graphs
 - **Multi-source audio** — Microphone, system audio, or mixed mode with echo cancellation (WebRTC AEC3)
-- **Cross-platform** — Windows (WASAPI), macOS (CoreAudio), Linux (PipeWire)
+- **Cross-platform** — Windows (WASAPI) and macOS (CoreAudio)
 - **Scriptable CLI** — Full command-line interface with JSON output
 
 ## Installation
@@ -25,7 +25,7 @@ Download the latest release from the [Releases page](https://github.com/keath/fl
 
 ### Windows
 
-1. Download `FlowSTT_X.X.X_x64-setup.exe` or `FlowSTT_X.X.X_x64.msi`
+1. Download `FlowSTT_X.X.X_x64.msi`
 2. Run the installer
 3. If Windows SmartScreen shows a warning, click **"More info"** then **"Run anyway"**
 4. Launch FlowSTT from the Start Menu or Desktop shortcut
@@ -40,26 +40,6 @@ Download the latest release from the [Releases page](https://github.com/keath/fl
    - Select **"Open"** from the context menu
    - Click **"Open"** in the dialog to confirm
 
-### Linux
-
-**DEB (Debian/Ubuntu):**
-```bash
-sudo dpkg -i flowstt_X.X.X_amd64.deb
-sudo apt-get install -f  # Install dependencies
-```
-
-**RPM (Fedora/RHEL):**
-```bash
-sudo rpm -i flowstt-X.X.X.x86_64.rpm
-```
-
-**AppImage (Universal):**
-```bash
-chmod +x FlowSTT_X.X.X_x86_64.AppImage
-./FlowSTT_X.X.X_x86_64.AppImage
-```
-
-**Note:** AppImage does not support auto-update. Download new versions manually from the Releases page.
 
 ## CLI Usage
 
@@ -120,7 +100,7 @@ pnpm tauri dev
 
 - **Backend**: Rust, Tauri 2.0, whisper-rs, WebRTC AEC3, rustfft
 - **Frontend**: TypeScript, Vite
-- **Audio**: WASAPI (Windows), CoreAudio (macOS), PipeWire (Linux)
+- **Audio**: WASAPI (Windows), CoreAudio (macOS)
 
 ## License
 

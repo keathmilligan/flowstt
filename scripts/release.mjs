@@ -145,9 +145,8 @@ const updateReadme = async (filePath) => {
     `**Current release:** ${tag}`,
     "",
     "**Download packages**",
-    `- Windows: [FlowSTT_${version}_x64-setup.exe](${baseUrl}/FlowSTT_${version}_x64-setup.exe), [FlowSTT_${version}_x64.msi](${baseUrl}/FlowSTT_${version}_x64.msi)`,
+    `- Windows: [FlowSTT_${version}_x64.msi](${baseUrl}/FlowSTT_${version}_x64.msi)`,
     `- macOS: [FlowSTT_aarch64.dmg](${baseUrl}/FlowSTT_aarch64.dmg), [FlowSTT_x64.dmg](${baseUrl}/FlowSTT_x64.dmg)`,
-    `- Linux: [flowstt_${version}_amd64.deb](${baseUrl}/flowstt_${version}_amd64.deb), [flowstt-${version}.x86_64.rpm](${baseUrl}/flowstt-${version}.x86_64.rpm), [FlowSTT_${version}_x86_64.AppImage](${baseUrl}/FlowSTT_${version}_x86_64.AppImage)`,
     "<!-- release-links:end -->",
   ].join("\n");
 
@@ -167,13 +166,10 @@ const updateReadme = async (filePath) => {
   updated = updated
     .replace(/X\.X\.X/g, version)
     .replace(/v\d+\.\d+\.\d+/g, tag)
-    .replace(/FlowSTT_\d+\.\d+\.\d+_x64-setup\.exe/g, `FlowSTT_${version}_x64-setup.exe`)
     .replace(/FlowSTT_\d+\.\d+\.\d+_x64\.msi/g, `FlowSTT_${version}_x64.msi`)
     .replace(/FlowSTT_\d+\.\d+\.\d+_aarch64\.dmg/g, "FlowSTT_aarch64.dmg")
     .replace(/FlowSTT_\d+\.\d+\.\d+_x64\.dmg/g, "FlowSTT_x64.dmg")
-    .replace(/flowstt_\d+\.\d+\.\d+_amd64\.deb/g, `flowstt_${version}_amd64.deb`)
-    .replace(/flowstt-\d+\.\d+\.\d+\.x86_64\.rpm/g, `flowstt-${version}.x86_64.rpm`)
-    .replace(/FlowSTT_\d+\.\d+\.\d+_x86_64\.AppImage/g, `FlowSTT_${version}_x86_64.AppImage`);
+    ;
 
   await writeFile(filePath, updated);
 };
