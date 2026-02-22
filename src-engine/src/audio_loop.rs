@@ -222,6 +222,12 @@ impl TranscriptionCallback for TranscriptionEventBroadcaster {
     }
 
     fn on_transcription_complete(&self, text: String, wav_path: Option<String>) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() || trimmed == "(No speech detected)" {
+            debug!("[Transcription] Skipping empty/no-speech result");
+            return;
+        }
+
         info!("[Transcription] Complete: {}", text);
 
         // Add to persistent history and get the enriched entry
