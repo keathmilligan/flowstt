@@ -150,6 +150,24 @@ img {
   background-color: var(--mini-waveform-hover);
 }
 
+.mini-waveform-help {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 27px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 400;
+  color: var(--mini-waveform-help-text);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .header-right {
   display: flex;
   align-items: center;

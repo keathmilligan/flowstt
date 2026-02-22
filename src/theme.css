@@ -87,6 +87,7 @@
 
   /* --- Mini Waveform --- */
   --mini-waveform-hover: rgba(255, 255, 255, 0.05);
+  --mini-waveform-help-text: #7c8796;
 
   /* --- Hotkey UI --- */
   --hotkey-remove-hover: #e55;
@@ -227,6 +228,7 @@
 
   /* --- Mini Waveform --- */
   --mini-waveform-hover: rgba(0, 0, 0, 0.05);
+  --mini-waveform-help-text: #7a8699;
 
   /* --- Hotkey UI --- */
   --hotkey-remove-hover: #dc2626;
