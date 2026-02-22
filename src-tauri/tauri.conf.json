@@ -22,7 +22,7 @@
         "minHeight": 240,
         "resizable": true,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "shadow": true,
         "visible": false,
         "center": true
