@@ -57,6 +57,13 @@ function keyDisplayName(code: string): string {
   return KEY_DISPLAY_NAMES[code] || code;
 }
 
+function isDebugConsoleHotkey(e: KeyboardEvent): boolean {
+  const isIKey = e.code === "KeyI" || e.key === "i" || e.key === "I";
+  const isCtrlShift = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
+  const isMetaAlt = e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey;
+  return isIKey && (isCtrlShift || isMetaAlt);
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -653,6 +660,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // We also call cancel_menu_mode on keyup, which sends WM_CANCELMODE to
   // the HWND from Rust, cancelling the menu activation state.
   const suppressKeyHandler = (e: KeyboardEvent) => {
+    if (isDebugConsoleHotkey(e)) return;
     // Allow Alt+F4 (window close)
     if (e.key === "F4" && e.altKey) return;
 

@@ -18,6 +18,13 @@ function startupLog(msg: string) {
 }
 startupLog(`JS module evaluated at ${JS_MODULE_LOAD_TIME.toFixed(0)}ms after page origin`);
 
+function isDebugConsoleHotkey(e: KeyboardEvent): boolean {
+  const isIKey = e.code === "KeyI" || e.key === "i" || e.key === "I";
+  const isCtrlShift = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
+  const isMetaAlt = e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey;
+  return isIKey && (isCtrlShift || isMetaAlt);
+}
+
 interface ModelStatus {
   available: boolean;
   path: string;
@@ -511,6 +518,7 @@ window.addEventListener("DOMContentLoaded", () => {
   //   - Form-element interactions: arrow keys, Enter, Space, Tab, and typed
   //     characters are allowed when a <select>, <input>, or <button> has focus
   const suppressKeyHandler = (e: KeyboardEvent) => {
+    if (isDebugConsoleHotkey(e)) return;
     // Allow Alt+F4 (window close / hide-to-tray)
     if (e.key === "F4" && e.altKey) return;
 

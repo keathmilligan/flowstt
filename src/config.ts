@@ -124,6 +124,13 @@ const BROWSER_CODE_MAP: Record<string, string> = {
   NumpadDivide: "numpad_divide", NumLock: "num_lock",
 };
 
+function isDebugConsoleHotkey(e: KeyboardEvent): boolean {
+  const isIKey = e.code === "KeyI" || e.key === "i" || e.key === "I";
+  const isCtrlShift = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
+  const isMetaAlt = e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey;
+  return isIKey && (isCtrlShift || isMetaAlt);
+}
+
 // Modifier key codes (for display ordering and warnings)
 const MODIFIER_KEYS = new Set([
   "right_alt", "left_alt", "right_control", "left_control",
@@ -658,6 +665,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // } else if (isRecordingToggle) {
     //   handleToggleRecordKeyDown(e);
     } else {
+      if (isDebugConsoleHotkey(e)) return;
       if (e.key === "F4" && e.altKey) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "SELECT" || tag === "INPUT" || tag === "BUTTON") return;
@@ -672,6 +680,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // } else if (isRecordingToggle) {
     //   handleToggleRecordKeyUp(e);
     } else {
+      if (isDebugConsoleHotkey(e)) return;
       if (e.key === "F4" && e.altKey) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "SELECT" || tag === "INPUT" || tag === "BUTTON") return;

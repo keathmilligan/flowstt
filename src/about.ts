@@ -10,6 +10,13 @@ const WEBSITE_URL = "https://flowstt.io";
 const GITHUB_URL = "https://github.com/flowstt/flowstt";
 const LICENSE_URL = "https://github.com/flowstt/flowstt/blob/master/LICENSE";
 
+function isDebugConsoleHotkey(e: KeyboardEvent): boolean {
+    const isIKey = e.code === "KeyI" || e.key === "i" || e.key === "I";
+    const isCtrlShift = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
+    const isMetaAlt = e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey;
+    return isIKey && (isCtrlShift || isMetaAlt);
+}
+
 /**
  * Open an external URL in the default browser.
  */
@@ -31,6 +38,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Suppress all default keyboard behaviour in this decorationless window.
     // See main.ts for detailed explanation of why this is needed.
     const suppressKeyHandler = (e: KeyboardEvent) => {
+        if (isDebugConsoleHotkey(e)) return;
         if (e.key === "F4" && e.altKey) return;
         const tag = (e.target as HTMLElement)?.tagName;
         if (tag === "SELECT" || tag === "INPUT" || tag === "BUTTON") return;
