@@ -1,6 +1,6 @@
 [package]
 name = "flowstt-engine"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Core engine for FlowSTT voice transcription - audio capture, processing, and transcription"
 
