@@ -179,8 +179,18 @@ jobs:
         id: signing
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
         run: |
-          if [ -n "$AZURE_CLIENT_ID" ]; then
+          if [ -n "$AZURE_CLIENT_ID" ] && \
+             [ -n "$AZURE_CLIENT_SECRET" ] && \
+             [ -n "$AZURE_TENANT_ID" ] && \
+             [ -n "$AZURE_SIGNING_ENDPOINT" ] && \
+             [ -n "$AZURE_SIGNING_ACCOUNT" ] && \
+             [ -n "$AZURE_CERT_PROFILE" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
         shell: bash
