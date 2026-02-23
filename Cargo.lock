@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "flowstt-app"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "dirs 5.0.1",
  "flowstt-common",
@@ -1174,7 +1174,7 @@ dependencies = [
 
 [[package]]
 name = "flowstt-cli"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "clap",
  "colored",
@@ -1189,7 +1189,7 @@ dependencies = [
 
 [[package]]
 name = "flowstt-common"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "directories",
  "dirs 5.0.1",
@@ -1202,7 +1202,7 @@ dependencies = [
 
 [[package]]
 name = "flowstt-engine"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "aec3",
  "block2 0.5.1",

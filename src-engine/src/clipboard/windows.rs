@@ -18,8 +18,8 @@ use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-    VIRTUAL_KEY, VK_CONTROL, VK_V,
+    MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+    KEYEVENTF_KEYUP, MAP_VIRTUAL_KEY_TYPE, VIRTUAL_KEY, VK_CONTROL, VK_V,
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
@@ -154,6 +154,17 @@ fn simulate_ctrl_v() -> Result<(), String> {
     Ok(())
 }
 
+/// Translate a virtual-key code to its hardware scan code.
+///
+/// Some applications (notably Chrome) ignore `SendInput` events that carry
+/// only a virtual-key code (`wVk`) with `wScan == 0`. Populating the scan
+/// code makes the synthetic input indistinguishable from a real keystroke.
+const MAPVK_VK_TO_VSC: MAP_VIRTUAL_KEY_TYPE = MAP_VIRTUAL_KEY_TYPE(0);
+
+fn vk_to_scan(vk: VIRTUAL_KEY) -> u16 {
+    unsafe { MapVirtualKeyW(vk.0 as u32, MAPVK_VK_TO_VSC) as u16 }
+}
+
 /// Build an `INPUT` struct for a single keyboard event.
 fn make_key_input(vk: VIRTUAL_KEY, key_up: bool) -> INPUT {
     let flags = if key_up {
@@ -167,7 +178,7 @@ fn make_key_input(vk: VIRTUAL_KEY, key_up: bool) -> INPUT {
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
                 wVk: vk,
-                wScan: 0,
+                wScan: vk_to_scan(vk),
                 dwFlags: flags,
                 time: 0,
                 dwExtraInfo: 0,

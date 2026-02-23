@@ -518,6 +518,13 @@ fn copy_libraries_for_tauri_bundle(lib_dir: &Path, lib_names: &[&str], out_dir: 
             }
         }
     }
+
+    // Clean up the placeholder DLL created by the Tauri app build script.
+    // See src-tauri/build.rs for details on why this placeholder exists.
+    let placeholder = release_lib_dir.join(".tauri-placeholder.dll");
+    if placeholder.exists() {
+        let _ = fs::remove_file(&placeholder);
+    }
 }
 
 fn download_file(url: &str, dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
