@@ -35,9 +35,8 @@ Download the latest release from the [Releases page](https://github.com/flowstt/
 ### Windows
 
 1. Download `FlowSTT_0.1.2_x64.msi`
-2. Run the installer
-3. If Windows SmartScreen shows a warning, click **"More info"** then **"Run anyway"**
-4. Launch FlowSTT from the Start Menu or Desktop shortcut
+2. Run the installer — the MSI is code-signed, so no SmartScreen warnings
+3. Launch FlowSTT from the Start Menu or Desktop shortcut
 
 ### macOS
 
@@ -104,6 +103,35 @@ make run-service
 # Run the UI
 pnpm tauri dev
 ```
+
+## Windows Code Signing
+
+Windows release builds are signed using [Azure Artifact Signing](https://learn.microsoft.com/en-us/azure/trusted-signing/overview) via [`trusted-signing-cli`](https://github.com/Levminer/trusted-signing-cli). Signing is automatic in CI when the required secrets are configured and is skipped otherwise (local builds are never signed).
+
+### GitHub Repository Secrets
+
+| Secret | Description |
+|--------|-------------|
+| `AZURE_TENANT_ID` | Microsoft Entra ID (Azure AD) tenant/directory ID |
+| `AZURE_CLIENT_ID` | App Registration application (client) ID |
+| `AZURE_CLIENT_SECRET` | App Registration client secret value |
+| `AZURE_SIGNING_ENDPOINT` | Regional endpoint URL (e.g. `https://eus.codesigning.azure.net`) |
+| `AZURE_SIGNING_ACCOUNT` | Artifact Signing account name |
+| `AZURE_CERT_PROFILE` | Certificate profile name |
+
+### Azure Infrastructure Setup
+
+Before configuring the secrets above, complete these steps in the Azure Portal:
+
+1. **Create an Azure subscription** (Pay-As-You-Go)
+2. **Register the `Microsoft.CodeSigning` resource provider** in your subscription
+3. **Create an Artifact Signing account** — note the account name and regional endpoint URL
+4. **Create an identity validation** (Public Trust) — requires business name, address, tax ID, and a primary/secondary email on a domain you own. Validation may take hours to days.
+5. **Create a certificate profile** (Public Trust) linked to the validated identity — note the profile name
+6. **Create an App Registration** in Microsoft Entra ID — note the application (client) ID, directory (tenant) ID, and create a client secret
+7. **Assign the `Artifact Signing Certificate Profile Signer` role** to the App Registration on the Artifact Signing account's IAM page
+
+See the [Azure Artifact Signing quickstart](https://learn.microsoft.com/en-us/azure/trusted-signing/quickstart) for detailed instructions.
 
 ## Tech Stack
 

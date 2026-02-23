@@ -1,5 +1,17 @@
 name: Release
 
+# Windows code signing via Azure Artifact Signing (optional).
+# Configure these repository secrets to enable signing:
+#
+#   AZURE_TENANT_ID        - Microsoft Entra ID (Azure AD) directory/tenant ID
+#   AZURE_CLIENT_ID        - App Registration application (client) ID
+#   AZURE_CLIENT_SECRET    - App Registration client secret value
+#   AZURE_SIGNING_ENDPOINT - Regional endpoint URL (e.g. https://eus.codesigning.azure.net)
+#   AZURE_SIGNING_ACCOUNT  - Artifact Signing account name
+#   AZURE_CERT_PROFILE     - Certificate profile name
+#
+# When these secrets are absent, Windows builds proceed unsigned.
+
 on:
   push:
     tags:
@@ -104,6 +116,7 @@ jobs:
           - platform: windows-latest
             target: ""
             args: ""
+            signing: true
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -158,7 +171,41 @@ jobs:
           mkdir -p target/release
           cp target/${{ matrix.target }}/release/flowstt target/release/flowstt
 
+      # Windows code signing: install trusted-signing-cli and sign CLI binary
+      # before Tauri bundles it. Pin version deliberately -- update only when tested.
+      - name: Install trusted-signing-cli
+        if: matrix.signing && secrets.AZURE_CLIENT_ID != ''
+        shell: pwsh
+        run: |
+          $version = "0.8.0"
+          $url = "https://github.com/Levminer/trusted-signing-cli/releases/download/$version/trusted-signing-cli.exe"
+          $dest = "$env:RUNNER_TEMP\trusted-signing-cli.exe"
+          Invoke-WebRequest -Uri $url -OutFile $dest
+          echo "$env:RUNNER_TEMP" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build CLI release for Windows bundling
+        if: matrix.platform == 'windows-latest'
+        run: cargo build -p flowstt-cli --release
+
+      - name: Sign CLI binary
+        if: matrix.signing && secrets.AZURE_CLIENT_ID != ''
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: >-
+          trusted-signing-cli
+          -e ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          -a ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          -c ${{ secrets.AZURE_CERT_PROFILE }}
+          -d FlowSTT
+          target/release/flowstt.exe
+
+      # Build Tauri app. Two mutually exclusive steps keep Windows signing
+      # env vars completely isolated from macOS/Linux builds, so each
+      # platform can add its own signing independently without conflict.
       - name: Build Tauri app
+        if: "!matrix.signing || secrets.AZURE_CLIENT_ID == ''"
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -169,6 +216,25 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Build Tauri app (Windows signed)
+        if: matrix.signing && secrets.AZURE_CLIENT_ID != ''
+        uses: tauri-apps/tauri-action@v0.6.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "FlowSTT ${{ github.ref_name }}"
+          releaseBody: "See the assets to download this version and install."
+          releaseDraft: true
+          prerelease: false
+          args: --config src-tauri/tauri.signing.conf.json
 
   generate-update-json:
     needs: [build-and-release]
