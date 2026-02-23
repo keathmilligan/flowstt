@@ -171,10 +171,22 @@ jobs:
           mkdir -p target/release
           cp target/${{ matrix.target }}/release/flowstt target/release/flowstt
 
-      # Windows code signing: install trusted-signing-cli and sign CLI binary
-      # before Tauri bundles it. Pin version deliberately -- update only when tested.
+      # Windows code signing: detect whether Azure credentials are available,
+      # install trusted-signing-cli, and sign the CLI binary before Tauri
+      # bundles it. Pin version deliberately -- update only when tested.
+      - name: Check for signing credentials
+        if: matrix.signing
+        id: signing
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          if [ -n "$AZURE_CLIENT_ID" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
       - name: Install trusted-signing-cli
-        if: matrix.signing && secrets.AZURE_CLIENT_ID != ''
+        if: steps.signing.outputs.enabled == 'true'
         shell: pwsh
         run: |
           $version = "0.8.0"
@@ -188,7 +200,7 @@ jobs:
         run: cargo build -p flowstt-cli --release
 
       - name: Sign CLI binary
-        if: matrix.signing && secrets.AZURE_CLIENT_ID != ''
+        if: steps.signing.outputs.enabled == 'true'
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -205,7 +217,7 @@ jobs:
       # env vars completely isolated from macOS/Linux builds, so each
       # platform can add its own signing independently without conflict.
       - name: Build Tauri app
-        if: "!matrix.signing || secrets.AZURE_CLIENT_ID == ''"
+        if: steps.signing.outputs.enabled != 'true'
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -218,7 +230,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Build Tauri app (Windows signed)
-        if: matrix.signing && secrets.AZURE_CLIENT_ID != ''
+        if: steps.signing.outputs.enabled == 'true'
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
