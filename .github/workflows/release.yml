@@ -222,6 +222,23 @@ jobs:
           -c ${{ secrets.AZURE_CERT_PROFILE }}
           -d FlowSTT
           target/release/flowstt.exe
+        shell: bash
+
+      # Write the Tauri signing overlay config with literal secret values so
+      # Tauri's sign command subprocess does not need to expand env vars.
+      - name: Write Tauri signing config
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          printf '%s\n' \
+            '{' \
+            '  "bundle": {' \
+            '    "windows": {' \
+            '      "signCommand": "trusted-signing-cli -e ${{ secrets.AZURE_SIGNING_ENDPOINT }} -a ${{ secrets.AZURE_SIGNING_ACCOUNT }} -c ${{ secrets.AZURE_CERT_PROFILE }} -d FlowSTT %1"' \
+            '    }' \
+            '  }' \
+            '}' \
+            > src-tauri/tauri.signing.conf.json
 
       # Build Tauri app. Two mutually exclusive steps keep Windows signing
       # env vars completely isolated from macOS/Linux builds, so each
@@ -247,9 +264,6 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
-          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
-          AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "FlowSTT ${{ github.ref_name }}"
