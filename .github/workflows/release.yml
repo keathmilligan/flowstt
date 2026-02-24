@@ -1,5 +1,16 @@
 name: Release
 
+# macOS code signing and notarization via Apple Developer ID (optional).
+# Configure these repository secrets to enable signing:
+#
+#   APPLE_CERTIFICATE_PASSWORD - Password for the exported .p12 certificate
+#   APPLE_SIGNING_IDENTITY     - Certificate name (e.g. "Developer ID Application: Name (TEAMID)")
+#   APPLE_API_ISSUER           - App Store Connect API key issuer UUID
+#   APPLE_API_KEY_CONTENT      - App Store Connect API key file content (.p8)
+#   APPLE_API_KEY_ID           - App Store Connect API key ID
+#
+# When these secrets are absent, macOS builds proceed unsigned.
+
 # Windows code signing via Azure Artifact Signing (optional).
 # Configure these repository secrets to enable signing:
 #
@@ -174,6 +185,25 @@ jobs:
       # Windows code signing: detect whether Azure credentials are available,
       # install trusted-signing-cli, and sign the CLI binary before Tauri
       # bundles it. Pin version deliberately -- update only when tested.
+      - name: Check for Apple signing credentials
+        if: matrix.platform == 'macos-latest'
+        id: apple-signing
+        env:
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && \
+             [ -n "$APPLE_SIGNING_IDENTITY" ] && \
+             [ -n "$APPLE_API_ISSUER" ] && \
+             [ -n "$APPLE_API_KEY" ] && \
+             [ -n "$APPLE_API_KEY_ID" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
       - name: Check for signing credentials
         if: matrix.signing
         id: signing
@@ -240,14 +270,32 @@ jobs:
             '}' \
             > src-tauri/tauri.signing.conf.json
 
-      # Build Tauri app. Two mutually exclusive steps keep Windows signing
-      # env vars completely isolated from macOS/Linux builds, so each
-      # platform can add its own signing independently without conflict.
-      - name: Build Tauri app
-        if: steps.signing.outputs.enabled != 'true'
+      # Build Tauri app. Three mutually exclusive steps keep signing env vars
+      # isolated per platform. Each platform can add its own signing
+      # independently without conflict.
+      - name: Build Tauri app (unsigned)
+        if: steps.apple-signing.outputs.enabled != 'true' && steps.signing.outputs.enabled != 'true'
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "FlowSTT ${{ github.ref_name }}"
+          releaseBody: "See the assets to download this version and install."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Build Tauri app (macOS signed)
+        if: steps.apple-signing.outputs.enabled == 'true'
+        uses: tauri-apps/tauri-action@v0.6.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "FlowSTT ${{ github.ref_name }}"
