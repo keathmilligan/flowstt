@@ -105,7 +105,7 @@ jobs:
         run: cargo test --workspace
 
   build-and-release:
-    needs: [test-and-lint]
+    # TODO: Re-enable needs: [test-and-lint] once signing is confirmed working
     permissions:
       contents: write
     strategy:
@@ -115,15 +115,17 @@ jobs:
           - platform: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin --bundles dmg
-          - platform: macos-latest
-            target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin --bundles dmg
+          # TODO: Re-enable once signing is confirmed working
+          # - platform: macos-latest
+          #   target: x86_64-apple-darwin
+          #   args: --target x86_64-apple-darwin --bundles dmg
           # TODO: Re-enable Linux support in a future version
           # - platform: ubuntu-22.04
           #   args: ""
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            args: ""
+          # TODO: Re-enable Windows once signing is confirmed working
+          # - platform: windows-latest
+          #   target: x86_64-pc-windows-msvc
+          #   args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -198,6 +200,59 @@ jobs:
           echo "${{ secrets.APPLE_API_KEY_CONTENT }}" > "$KEY_PATH"
           echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
           echo "APPLE_API_KEY=${{ secrets.APPLE_API_KEY_ID }}" >> "$GITHUB_ENV"
+
+      # macOS: pre-sign bundled resources (CLI binary + libwhisper.dylib).
+      # Tauri's bundler only signs frameworks and external binaries, NOT plain
+      # resources. These files end up in Contents/Resources/ unsigned, which
+      # causes notarization to fail. Sign them in target/release/ before
+      # tauri-action copies them into the .app bundle.
+      - name: Pre-sign macOS bundled resources
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create a temporary keychain and import the certificate
+          KEYCHAIN_PATH="$RUNNER_TEMP/presign.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Decode and import the certificate
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          rm "$CERT_PATH"
+
+          # Add to keychain search list so codesign can find the identity
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+
+          # Sign the CLI binary with Developer ID, secure timestamp, hardened runtime
+          echo "Signing target/release/flowstt..."
+          codesign --force --sign "$IDENTITY" \
+            --timestamp \
+            --options runtime \
+            target/release/flowstt
+
+          # Sign libwhisper.dylib
+          echo "Signing target/release/libwhisper.dylib..."
+          codesign --force --sign "$IDENTITY" \
+            --timestamp \
+            target/release/libwhisper.dylib
+
+          # Verify signatures
+          codesign --verify --verbose target/release/flowstt
+          codesign --verify --verbose target/release/libwhisper.dylib
 
       - name: Build Tauri app (macOS)
         if: matrix.platform == 'macos-latest'
