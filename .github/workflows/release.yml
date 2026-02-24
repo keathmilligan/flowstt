@@ -29,61 +29,83 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # TODO: Re-enable test-and-lint once signing is confirmed working
-  # test-and-lint:
-  #   strategy:
-  #     fail-fast: true
-  #     matrix:
-  #       platform: [macos-latest, windows-latest]
-  #
-  #   runs-on: ${{ matrix.platform }}
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-  #
-  #     - name: Setup Node.js
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: lts/*
-  #
-  #     - name: Install pnpm
-  #       run: npm install -g pnpm
-  #
-  #     - name: Install frontend dependencies
-  #       run: pnpm install
-  #
-  #     - name: Setup Rust toolchain
-  #       uses: dtolnay/rust-toolchain@stable
-  #       with:
-  #         components: clippy
-  #
-  #     - name: Cache Rust dependencies
-  #       uses: Swatinem/rust-cache@v2
-  #
-  #     - name: TypeScript type check
-  #       run: pnpm exec tsc --noEmit
-  #
-  #     - name: Rust lint - src-common
-  #       run: cargo clippy --manifest-path src-common/Cargo.toml --all-targets -- -D warnings
-  #
-  #     - name: Rust lint - src-engine
-  #       run: cargo clippy --manifest-path src-engine/Cargo.toml --all-targets -- -D warnings
-  #
-  #     - name: Rust lint - src-cli
-  #       run: cargo clippy --manifest-path src-cli/Cargo.toml --all-targets -- -D warnings
-  #
-  #     - name: Build CLI release (required for tauri-build resource validation on macOS)
-  #       if: matrix.platform == 'macos-latest'
-  #       run: cargo build -p flowstt-cli --release
-  #
-  #     - name: Rust lint - src-tauri
-  #       run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-  #
-  #     - name: Rust tests
-  #       run: cargo test --workspace
+  test-and-lint:
+    strategy:
+      fail-fast: true
+      matrix:
+        # TODO: Re-enable Linux support in a future version
+        # platform: [ubuntu-22.04, macos-latest, windows-latest]
+        platform: [macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          # Add PipeWire PPA for newer version (Ubuntu 22.04 ships 0.3.48, we need 0.3.65+)
+          sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libpipewire-0.3-dev \
+            libspa-0.2-dev \
+            libclang-dev \
+            cmake
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: TypeScript type check
+        run: pnpm exec tsc --noEmit
+
+      - name: Rust lint - src-common
+        run: cargo clippy --manifest-path src-common/Cargo.toml --all-targets -- -D warnings
+
+      - name: Rust lint - src-engine
+        run: cargo clippy --manifest-path src-engine/Cargo.toml --all-targets -- -D warnings
+
+      - name: Rust lint - src-cli
+        run: cargo clippy --manifest-path src-cli/Cargo.toml --all-targets -- -D warnings
+
+      # tauri-build validates macOS bundle resource paths at build-script time (even
+      # during clippy). The macOS bundle includes target/release/flowstt and
+      # target/release/libwhisper.dylib. Build both prerequisites first so they exist
+      # when tauri-build executes. The engine step above runs its build script, which
+      # downloads and copies libwhisper.dylib to target/release/ as a side effect.
+      - name: Build CLI release (required for tauri-build resource validation on macOS)
+        if: matrix.platform == 'macos-latest'
+        run: cargo build -p flowstt-cli --release
+
+      - name: Rust lint - src-tauri
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
 
   build-and-release:
-    # TODO: Re-enable needs: [test-and-lint] once signing is confirmed working
+    needs: [test-and-lint]
     permissions:
       contents: write
     strategy:
@@ -93,17 +115,15 @@ jobs:
           - platform: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin --bundles dmg
-          # TODO: Re-enable once signing is confirmed working
-          # - platform: macos-latest
-          #   target: x86_64-apple-darwin
-          #   args: --target x86_64-apple-darwin --bundles dmg
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles dmg
           # TODO: Re-enable Linux support in a future version
           # - platform: ubuntu-22.04
           #   args: ""
-          # TODO: Re-enable Windows once signing is confirmed working
-          # - platform: windows-latest
-          #   target: x86_64-pc-windows-msvc
-          #   args: ""
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
