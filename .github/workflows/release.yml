@@ -240,6 +240,12 @@ jobs:
           codesign --verify --verbose target/release/flowstt
           codesign --verify --verbose target/release/libwhisper.dylib
 
+          # Make both read-only so the engine build script (which runs again
+          # during pnpm tauri build) cannot overwrite them with unsigned copies.
+          # The build script handles fs::copy failure gracefully (warning only).
+          chmod 444 target/release/flowstt
+          chmod 444 target/release/libwhisper.dylib
+
       - name: Build Tauri app (macOS)
         if: matrix.platform == 'macos-latest'
         uses: tauri-apps/tauri-action@v0.6.0
