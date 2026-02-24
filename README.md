@@ -24,17 +24,17 @@ FlowSTT is a free, privacy-first speech-to-text application that runs entirely o
 Download the latest release from the [Releases page](https://github.com/flowstt/flowstt/releases).
 
 <!-- release-links:start -->
-**Current release:** v0.1.13
+**Current release:** v0.1.14
 
 **Download packages**
-- Windows: [FlowSTT_0.1.13_x64.msi](https://github.com/flowstt/flowstt/releases/download/v0.1.13/FlowSTT_0.1.13_x64.msi)
-- macOS (Apple Silicon M-Series): [FlowSTT_aarch64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.13/FlowSTT_aarch64.dmg)
-- macOS (Legacy Intel x64): [FlowSTT_x64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.13/FlowSTT_x64.dmg)
+- Windows: [FlowSTT_0.1.14_x64.msi](https://github.com/flowstt/flowstt/releases/download/v0.1.14/FlowSTT_0.1.14_x64.msi)
+- macOS (Apple Silicon M-Series): [FlowSTT_aarch64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.14/FlowSTT_aarch64.dmg)
+- macOS (Legacy Intel x64): [FlowSTT_x64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.14/FlowSTT_x64.dmg)
 <!-- release-links:end -->
 
 ### Windows
 
-1. Download `FlowSTT_0.1.13_x64.msi`
+1. Download `FlowSTT_0.1.14_x64.msi`
 2. Run the installer — the MSI is code-signed, so no SmartScreen warnings
 3. Launch FlowSTT from the Start Menu or Desktop shortcut
 
