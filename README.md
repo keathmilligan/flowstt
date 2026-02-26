@@ -6,6 +6,11 @@
 
 ---
 
+[![CI](https://img.shields.io/github/actions/workflow/status/flowstt/flowstt/ci.yml?label=CI)](https://github.com/flowstt/flowstt/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/actions/workflow/status/flowstt/flowstt/release.yml?label=Release)](https://github.com/flowstt/flowstt/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/flowstt/flowstt)](https://github.com/flowstt/flowstt/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/flowstt/flowstt/blob/master/LICENSE)
+
 FlowSTT is a free, privacy-first speech-to-text application that runs entirely on your local machine. No subscriptions, no signups, no cloud services —- your voice data never leaves your computer.
 
 ![FlowSTT Screenshot](images/flowstt-screenshot.png)
