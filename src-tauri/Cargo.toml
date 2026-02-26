@@ -1,6 +1,6 @@
 [package]
 name = "flowstt-app"
-version = "0.1.5"
+version = "0.1.14"
 description = "FlowSTT - Speech to Text GUI"
 authors = ["you"]
 edition = "2021"

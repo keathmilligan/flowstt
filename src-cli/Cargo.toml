@@ -1,6 +1,6 @@
 [package]
 name = "flowstt-cli"
-version = "0.1.5"
+version = "0.1.14"
 edition = "2021"
 description = "Command-line interface for FlowSTT voice transcription"
 

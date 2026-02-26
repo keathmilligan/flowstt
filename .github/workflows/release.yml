@@ -1,7 +1,17 @@
 name: Release
 
-# Windows code signing via Azure Artifact Signing (optional).
-# Configure these repository secrets to enable signing:
+# macOS code signing and notarization via Apple Developer ID.
+# Required repository secrets:
+#
+#   APPLE_CERTIFICATE          - Base64-encoded .p12 certificate file
+#   APPLE_CERTIFICATE_PASSWORD - Password for the exported .p12 certificate
+#   APPLE_SIGNING_IDENTITY     - Certificate name (e.g. "Developer ID Application: Name (TEAMID)")
+#   APPLE_API_ISSUER           - App Store Connect API key issuer UUID
+#   APPLE_API_KEY_CONTENT      - App Store Connect API key file content (.p8)
+#   APPLE_API_KEY_ID           - App Store Connect API key ID
+
+# Windows code signing via Azure Trusted Signing.
+# Required repository secrets:
 #
 #   AZURE_TENANT_ID        - Microsoft Entra ID (Azure AD) directory/tenant ID
 #   AZURE_CLIENT_ID        - App Registration application (client) ID
@@ -9,8 +19,6 @@ name: Release
 #   AZURE_SIGNING_ENDPOINT - Regional endpoint URL (e.g. https://eus.codesigning.azure.net)
 #   AZURE_SIGNING_ACCOUNT  - Artifact Signing account name
 #   AZURE_CERT_PROFILE     - Certificate profile name
-#
-# When these secrets are absent, Windows builds proceed unsigned.
 
 on:
   push:
@@ -114,30 +122,13 @@ jobs:
           # - platform: ubuntu-22.04
           #   args: ""
           - platform: windows-latest
-            target: ""
+            target: x86_64-pc-windows-msvc
             args: ""
-            signing: true
 
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          # Add PipeWire PPA for newer version (Ubuntu 22.04 ships 0.3.48, we need 0.3.65+)
-          sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libpipewire-0.3-dev \
-            libspa-0.2-dev \
-            libclang-dev \
-            cmake
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -164,6 +155,8 @@ jobs:
             src-common -> target
             src-cli -> target
 
+      # macOS: build the CLI for the specific cross-compile target, then copy
+      # to target/release/ where tauri.macos.conf.json expects to find it.
       - name: Build CLI release for macOS bundling
         if: matrix.platform == 'macos-latest'
         run: |
@@ -171,12 +164,135 @@ jobs:
           mkdir -p target/release
           cp target/${{ matrix.target }}/release/flowstt target/release/flowstt
 
-      # Windows code signing: detect whether Azure credentials are available,
-      # install trusted-signing-cli, and sign the CLI binary before Tauri
-      # bundles it. Pin version deliberately -- update only when tested.
-      - name: Check for signing credentials
-        if: matrix.signing
-        id: signing
+      # macOS: build the engine to trigger the build script that downloads
+      # whisper.cpp and copies libwhisper.dylib to target/release/.
+      - name: Build engine for macOS bundling
+        if: matrix.platform == 'macos-latest'
+        run: |
+          cargo build -p flowstt-engine --release --target ${{ matrix.target }}
+          ls -la target/release/libwhisper.dylib
+
+      # macOS: verify all required signing secrets are present, fail fast if not.
+      - name: Verify Apple signing secrets
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          missing=()
+          [ -z "$APPLE_CERTIFICATE" ]          && missing+=(APPLE_CERTIFICATE)
+          [ -z "$APPLE_CERTIFICATE_PASSWORD" ] && missing+=(APPLE_CERTIFICATE_PASSWORD)
+          [ -z "$APPLE_SIGNING_IDENTITY" ]     && missing+=(APPLE_SIGNING_IDENTITY)
+          [ -z "$APPLE_API_ISSUER" ]           && missing+=(APPLE_API_ISSUER)
+          [ -z "$APPLE_API_KEY_CONTENT" ]      && missing+=(APPLE_API_KEY_CONTENT)
+          [ -z "$APPLE_API_KEY_ID" ]           && missing+=(APPLE_API_KEY_ID)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ERROR: Missing required Apple signing secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      # macOS: write the .p8 API key to a file; Tauri CLI reads APPLE_API_KEY
+      # (key ID) and APPLE_API_KEY_PATH (file path) for notarization.
+      - name: Write Apple API key file
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
+          echo "${{ secrets.APPLE_API_KEY_CONTENT }}" > "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY=${{ secrets.APPLE_API_KEY_ID }}" >> "$GITHUB_ENV"
+
+      # macOS: pre-sign bundled resources (CLI binary + libwhisper.dylib).
+      # Tauri's bundler only signs frameworks and external binaries, NOT plain
+      # resources. These files end up in Contents/Resources/ unsigned, which
+      # causes notarization to fail. Sign them in target/release/ before
+      # tauri-action copies them into the .app bundle.
+      - name: Pre-sign macOS bundled resources
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create a temporary keychain and import the certificate
+          KEYCHAIN_PATH="$RUNNER_TEMP/presign.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Decode and import the certificate
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          rm "$CERT_PATH"
+
+          # Add to keychain search list so codesign can find the identity
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+
+          # Sign the CLI binary with Developer ID, secure timestamp, hardened runtime
+          echo "Signing target/release/flowstt..."
+          codesign --force --sign "$IDENTITY" \
+            --timestamp \
+            --options runtime \
+            target/release/flowstt
+
+          # Sign libwhisper.dylib
+          echo "Signing target/release/libwhisper.dylib..."
+          codesign --force --sign "$IDENTITY" \
+            --timestamp \
+            target/release/libwhisper.dylib
+
+          # Verify signatures
+          codesign --verify --verbose target/release/flowstt
+          codesign --verify --verbose target/release/libwhisper.dylib
+
+          # Make both read-only so the engine build script (which runs again
+          # during pnpm tauri build) cannot overwrite them with unsigned copies.
+          # The build script handles fs::copy failure gracefully (warning only).
+          chmod 444 target/release/flowstt
+          chmod 444 target/release/libwhisper.dylib
+
+      - name: Build Tauri app (macOS)
+        if: matrix.platform == 'macos-latest'
+        uses: tauri-apps/tauri-action@v0.6.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # APPLE_API_KEY and APPLE_API_KEY_PATH set via $GITHUB_ENV above
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "FlowSTT ${{ github.ref_name }}"
+          releaseBody: "See the assets to download this version and install."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      # Windows: build the CLI first so Tauri can bundle it.
+      - name: Build CLI release for Windows bundling
+        if: matrix.platform == 'windows-latest'
+        run: cargo build -p flowstt-cli --release
+
+      # Windows: verify all required Azure signing secrets are present, fail fast if not.
+      - name: Verify Azure signing secrets
+        if: matrix.platform == 'windows-latest'
+        shell: bash
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -185,18 +301,22 @@ jobs:
           AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
           AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
         run: |
-          if [ -n "$AZURE_CLIENT_ID" ] && \
-             [ -n "$AZURE_CLIENT_SECRET" ] && \
-             [ -n "$AZURE_TENANT_ID" ] && \
-             [ -n "$AZURE_SIGNING_ENDPOINT" ] && \
-             [ -n "$AZURE_SIGNING_ACCOUNT" ] && \
-             [ -n "$AZURE_CERT_PROFILE" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          missing=()
+          [ -z "$AZURE_CLIENT_ID" ]        && missing+=(AZURE_CLIENT_ID)
+          [ -z "$AZURE_CLIENT_SECRET" ]    && missing+=(AZURE_CLIENT_SECRET)
+          [ -z "$AZURE_TENANT_ID" ]        && missing+=(AZURE_TENANT_ID)
+          [ -z "$AZURE_SIGNING_ENDPOINT" ] && missing+=(AZURE_SIGNING_ENDPOINT)
+          [ -z "$AZURE_SIGNING_ACCOUNT" ]  && missing+=(AZURE_SIGNING_ACCOUNT)
+          [ -z "$AZURE_CERT_PROFILE" ]     && missing+=(AZURE_CERT_PROFILE)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ERROR: Missing required Azure signing secrets: ${missing[*]}"
+            exit 1
           fi
-        shell: bash
 
+      # Windows: download trusted-signing-cli and sign the CLI binary before
+      # Tauri bundles it. Pin version deliberately -- update only when tested.
       - name: Install trusted-signing-cli
-        if: steps.signing.outputs.enabled == 'true'
+        if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
           $version = "0.8.0"
@@ -205,12 +325,9 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $dest
           echo "$env:RUNNER_TEMP" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Build CLI release for Windows bundling
-        if: matrix.platform == 'windows-latest'
-        run: cargo build -p flowstt-cli --release
-
       - name: Sign CLI binary
-        if: steps.signing.outputs.enabled == 'true'
+        if: matrix.platform == 'windows-latest'
+        shell: bash
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -222,12 +339,11 @@ jobs:
           -c ${{ secrets.AZURE_CERT_PROFILE }}
           -d FlowSTT
           target/release/flowstt.exe
-        shell: bash
 
-      # Write the Tauri signing overlay config with literal secret values so
-      # Tauri's sign command subprocess does not need to expand env vars.
+      # Windows: write Tauri signing overlay config with literal secret values
+      # so Tauri's sign command subprocess does not need to expand env vars.
       - name: Write Tauri signing config
-        if: steps.signing.outputs.enabled == 'true'
+        if: matrix.platform == 'windows-latest'
         shell: bash
         run: |
           printf '%s\n' \
@@ -240,24 +356,8 @@ jobs:
             '}' \
             > src-tauri/tauri.signing.conf.json
 
-      # Build Tauri app. Two mutually exclusive steps keep Windows signing
-      # env vars completely isolated from macOS/Linux builds, so each
-      # platform can add its own signing independently without conflict.
-      - name: Build Tauri app
-        if: steps.signing.outputs.enabled != 'true'
-        uses: tauri-apps/tauri-action@v0.6.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "FlowSTT ${{ github.ref_name }}"
-          releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
-
-      - name: Build Tauri app (Windows signed)
-        if: steps.signing.outputs.enabled == 'true'
+      - name: Build Tauri app (Windows)
+        if: matrix.platform == 'windows-latest'
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
