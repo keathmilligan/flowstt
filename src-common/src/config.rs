@@ -147,7 +147,10 @@ impl Config {
     pub fn default_with_hotkeys() -> Self {
         Self {
             transcription_mode: TranscriptionMode::default(),
-            ptt_hotkeys: vec![HotkeyCombination::single(KeyCode::default())],
+            ptt_hotkeys: vec![HotkeyCombination::new(vec![
+                KeyCode::RightControl,
+                KeyCode::RightShift,
+            ])],
             auto_toggle_hotkeys: vec![],
             auto_paste_enabled: true,
             auto_paste_delay_ms: 50,
@@ -160,7 +163,10 @@ impl Config {
         let ptt_hotkeys = if let Some(hotkeys) = legacy.ptt_hotkeys {
             // Already in new format
             if hotkeys.is_empty() {
-                vec![HotkeyCombination::single(KeyCode::default())]
+                vec![HotkeyCombination::new(vec![
+                    KeyCode::RightControl,
+                    KeyCode::RightShift,
+                ])]
             } else {
                 hotkeys
             }
@@ -169,7 +175,10 @@ impl Config {
             vec![HotkeyCombination::single(key)]
         } else {
             // Neither field present, use default
-            vec![HotkeyCombination::single(KeyCode::default())]
+            vec![HotkeyCombination::new(vec![
+                KeyCode::RightControl,
+                KeyCode::RightShift,
+            ])]
         };
 
         // Handle auto_toggle_hotkeys migration
@@ -203,7 +212,9 @@ mod tests {
         let config = Config::default_with_hotkeys();
         assert_eq!(config.transcription_mode, TranscriptionMode::default());
         assert_eq!(config.ptt_hotkeys.len(), 1);
-        assert_eq!(config.ptt_hotkeys[0].keys, vec![KeyCode::default()]);
+        assert!(config.ptt_hotkeys[0].keys.contains(&KeyCode::RightControl));
+        assert!(config.ptt_hotkeys[0].keys.contains(&KeyCode::RightShift));
+        assert_eq!(config.ptt_hotkeys[0].keys.len(), 2);
         assert_eq!(config.auto_toggle_hotkeys.len(), 0);
     }
 
@@ -245,7 +256,8 @@ mod tests {
 
         assert_eq!(config.transcription_mode, TranscriptionMode::Automatic);
         assert_eq!(config.ptt_hotkeys.len(), 1);
-        assert_eq!(config.ptt_hotkeys[0].keys, vec![KeyCode::default()]);
+        assert!(config.ptt_hotkeys[0].keys.contains(&KeyCode::RightControl));
+        assert!(config.ptt_hotkeys[0].keys.contains(&KeyCode::RightShift));
     }
 
     #[test]
