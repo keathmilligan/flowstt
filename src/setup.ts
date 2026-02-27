@@ -98,7 +98,7 @@ let modelDownloaded = false;
 let selectedDeviceId: string | null = null;
 let selectedSystemDeviceId: string | null = null;
 const transcriptionMode: "push_to_talk" = "push_to_talk";
-let pttHotkey: HotkeyCombination = { keys: ["right_alt"] };
+let pttHotkey: HotkeyCombination = { keys: ["right_shift", "right_control"] };
 let isRecordingHotkey = false;
 let recordedKeys: Set<string> = new Set();
 let currentlyHeldKeys: Set<string> = new Set();
@@ -709,8 +709,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // On Windows, releasing the Alt key sends WM_SYSKEYUP which triggers the
   // menu bar activation heuristic. Even in a decorationless window, WebView2
   // processes this and enters a state that suspends rendering until a mouse
-  // click cancels menu mode. Since the default PTT key is RightAlt, this
-  // would freeze the window every time the user releases the talk key.
+  // click cancels menu mode. If the PTT key is an Alt key, this would freeze
+  // the window every time the user releases the talk key.
   // Block everything except Alt+F4 and form element interactions.
   //
   // JavaScript preventDefault() alone cannot prevent the Win32-level menu

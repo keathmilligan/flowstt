@@ -1094,11 +1094,11 @@ async fn handle_setup(client: &mut Client, _cli: &Cli) -> Result<(), CliError> {
     };
     println!("  Selected: {}", mode_name.green());
 
-    let mut hotkey = HotkeyCombination::single(KeyCode::default());
+    let mut hotkey = HotkeyCombination::new(vec![KeyCode::RightShift, KeyCode::RightControl]);
 
     if mode == TranscriptionMode::PushToTalk {
         print!(
-            "  PTT key [default=RightAlt, or type key name e.g. f5, left_control]: "
+            "  PTT key [default=RightShift+RightControl, or type key name e.g. f5, left_control]: "
         );
         stdout.flush().unwrap();
         let mut key_answer = String::new();
@@ -1114,14 +1114,14 @@ async fn handle_setup(client: &mut Client, _cli: &Cli) -> Result<(), CliError> {
                 }
                 Err(_) => {
                     println!(
-                        "  {}: Unknown key '{}', using RightAlt",
+                        "  {}: Unknown key '{}', using RightShift+RightControl",
                         "Warning".yellow(),
                         key_str
                     );
                 }
             }
         } else {
-            println!("  PTT key: {}", "RightAlt".green());
+            println!("  PTT key: {}", "RightShift+RightControl".green());
         }
     }
 

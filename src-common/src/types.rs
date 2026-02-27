@@ -65,8 +65,7 @@ impl RuntimeMode {
 #[serde(rename_all = "snake_case")]
 pub enum KeyCode {
     // === Modifier Keys ===
-    /// Right Alt/Option key (default on macOS)
-    #[default]
+    /// Right Alt/Option key
     RightAlt,
     /// Left Alt/Option key
     LeftAlt,
@@ -75,6 +74,7 @@ pub enum KeyCode {
     /// Left Control key
     LeftControl,
     /// Right Shift key
+    #[default]
     RightShift,
     /// Left Shift key
     LeftShift,
