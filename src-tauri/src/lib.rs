@@ -387,13 +387,16 @@ async fn set_transcription_mode(mode: TranscriptionMode) -> Result<(), String> {
 
 /// Set the push-to-talk hotkey combinations
 #[tauri::command]
-async fn set_ptt_hotkeys(hotkeys: Vec<HotkeyCombination>) -> Result<(), String> {
+async fn set_ptt_hotkeys(hotkeys: Vec<HotkeyCombination>, app_handle: AppHandle) -> Result<(), String> {
     let response = flowstt_engine::ipc::handlers::handle_request(
         Request::SetPushToTalkHotkeys { hotkeys },
     )
     .await;
     match response {
-        Response::Ok => Ok(()),
+        Response::Ok => {
+            let _ = app_handle.emit("ptt-hotkeys-changed", ());
+            Ok(())
+        }
         Response::Error { message } => Err(message),
         _ => Err("Unexpected response".into()),
     }

@@ -154,7 +154,7 @@ img {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 52px;
+  min-width: 52px;
   height: 27px;
   box-sizing: border-box;
   padding: 0 6px;
@@ -164,8 +164,6 @@ img {
   color: var(--mini-waveform-help-text);
   text-align: center;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .header-right {

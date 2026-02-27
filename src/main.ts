@@ -88,6 +88,7 @@ let transcriptionErrorUnlisten: UnlistenFn | null = null;
 let captureStateChangedUnlisten: UnlistenFn | null = null;
 let historyEntryDeletedUnlisten: UnlistenFn | null = null;
 let autoModeToggledUnlisten: UnlistenFn | null = null;
+let pttHotkeysChangedUnlisten: UnlistenFn | null = null;
 
 let miniWaveformRenderer: MiniWaveformRenderer | null = null;
 
@@ -275,6 +276,13 @@ async function setupEventListeners() {
       // The config window will handle updating its own UI via its own listener
     });
   }
+
+  // PTT hotkeys changed (from config window)
+  if (!pttHotkeysChangedUnlisten) {
+    pttHotkeysChangedUnlisten = await listen("ptt-hotkeys-changed", () => {
+      refreshHotkeyHelpText();
+    });
+  }
 }
 
 function cleanupEventListeners() {
@@ -295,6 +303,9 @@ function cleanupEventListeners() {
 
   autoModeToggledUnlisten?.();
   autoModeToggledUnlisten = null;
+
+  pttHotkeysChangedUnlisten?.();
+  pttHotkeysChangedUnlisten = null;
 }
 
 // ============== History Display ==============
