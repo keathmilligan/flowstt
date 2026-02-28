@@ -8,12 +8,14 @@ mod tray;
 
 use flowstt_common::config::{Config, ThemeMode};
 use flowstt_common::ipc::{EventType, Request, Response};
-use flowstt_common::{runtime_mode, AudioDevice, HotkeyCombination, RecordingMode, RuntimeMode, TranscriptionMode};
+use flowstt_common::{
+    runtime_mode, AudioDevice, HotkeyCombination, RecordingMode, RuntimeMode, TranscriptionMode,
+};
 use std::env;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter, Listener, Manager, State};
 use tauri::webview::WebviewWindowBuilder;
 use tauri::WebviewUrl;
+use tauri::{AppHandle, Emitter, Listener, Manager, State};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -44,7 +46,10 @@ fn init_logging() {
     match mode {
         RuntimeMode::Production => {
             if let Err(e) = flowstt_common::logging::ensure_log_dir() {
-                eprintln!("Warning: Failed to create log directory, using temp dir: {}", e);
+                eprintln!(
+                    "Warning: Failed to create log directory, using temp dir: {}",
+                    e
+                );
             }
 
             let log_path = flowstt_common::logging::app_log_path();
@@ -216,10 +221,9 @@ fn forward_event_to_tauri(app_handle: &AppHandle, event: &EventType) {
 /// List all available audio sources
 #[tauri::command]
 async fn list_all_sources() -> Result<Vec<AudioDevice>, String> {
-    let response = flowstt_engine::ipc::handlers::handle_request(
-        Request::ListDevices { source_type: None },
-    )
-    .await;
+    let response =
+        flowstt_engine::ipc::handlers::handle_request(Request::ListDevices { source_type: None })
+            .await;
     match response {
         Response::Devices { devices } => Ok(devices),
         Response::Error { message } => Err(message),
@@ -229,10 +233,7 @@ async fn list_all_sources() -> Result<Vec<AudioDevice>, String> {
 
 /// Set audio sources
 #[tauri::command]
-async fn set_sources(
-    source1_id: Option<String>,
-    source2_id: Option<String>,
-) -> Result<(), String> {
+async fn set_sources(source1_id: Option<String>, source2_id: Option<String>) -> Result<(), String> {
     let response = flowstt_engine::ipc::handlers::handle_request(Request::SetSources {
         source1_id,
         source2_id,
@@ -279,8 +280,7 @@ struct LocalModelStatus {
 /// Check Whisper model status
 #[tauri::command]
 async fn check_model_status() -> Result<LocalModelStatus, String> {
-    let response =
-        flowstt_engine::ipc::handlers::handle_request(Request::GetModelStatus).await;
+    let response = flowstt_engine::ipc::handlers::handle_request(Request::GetModelStatus).await;
     match response {
         Response::ModelStatus(status) => Ok(LocalModelStatus {
             available: status.available,
@@ -294,8 +294,7 @@ async fn check_model_status() -> Result<LocalModelStatus, String> {
 /// Download the Whisper model
 #[tauri::command]
 async fn download_model() -> Result<(), String> {
-    let response =
-        flowstt_engine::ipc::handlers::handle_request(Request::DownloadModel).await;
+    let response = flowstt_engine::ipc::handlers::handle_request(Request::DownloadModel).await;
     match response {
         Response::Ok => Ok(()),
         Response::Error { message } => Err(message),
@@ -314,8 +313,7 @@ struct LocalCudaStatus {
 /// Get CUDA/GPU acceleration status
 #[tauri::command]
 async fn get_cuda_status() -> Result<LocalCudaStatus, String> {
-    let response =
-        flowstt_engine::ipc::handlers::handle_request(Request::GetCudaStatus).await;
+    let response = flowstt_engine::ipc::handlers::handle_request(Request::GetCudaStatus).await;
     match response {
         Response::CudaStatus(status) => Ok(LocalCudaStatus {
             build_enabled: status.build_enabled,
@@ -342,8 +340,7 @@ struct LocalStatus {
 /// Get current status
 #[tauri::command]
 async fn get_status() -> Result<LocalStatus, String> {
-    let response =
-        flowstt_engine::ipc::handlers::handle_request(Request::GetStatus).await;
+    let response = flowstt_engine::ipc::handlers::handle_request(Request::GetStatus).await;
     match response {
         Response::Status(status) => Ok(LocalStatus {
             capturing: status.capturing,
@@ -374,10 +371,8 @@ struct LocalPttStatus {
 /// Set the transcription mode
 #[tauri::command]
 async fn set_transcription_mode(mode: TranscriptionMode) -> Result<(), String> {
-    let response = flowstt_engine::ipc::handlers::handle_request(
-        Request::SetTranscriptionMode { mode },
-    )
-    .await;
+    let response =
+        flowstt_engine::ipc::handlers::handle_request(Request::SetTranscriptionMode { mode }).await;
     match response {
         Response::Ok => Ok(()),
         Response::Error { message } => Err(message),
@@ -387,11 +382,13 @@ async fn set_transcription_mode(mode: TranscriptionMode) -> Result<(), String> {
 
 /// Set the push-to-talk hotkey combinations
 #[tauri::command]
-async fn set_ptt_hotkeys(hotkeys: Vec<HotkeyCombination>, app_handle: AppHandle) -> Result<(), String> {
-    let response = flowstt_engine::ipc::handlers::handle_request(
-        Request::SetPushToTalkHotkeys { hotkeys },
-    )
-    .await;
+async fn set_ptt_hotkeys(
+    hotkeys: Vec<HotkeyCombination>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    let response =
+        flowstt_engine::ipc::handlers::handle_request(Request::SetPushToTalkHotkeys { hotkeys })
+            .await;
     match response {
         Response::Ok => {
             let _ = app_handle.emit("ptt-hotkeys-changed", ());
@@ -405,8 +402,7 @@ async fn set_ptt_hotkeys(hotkeys: Vec<HotkeyCombination>, app_handle: AppHandle)
 /// Get push-to-talk status
 #[tauri::command]
 async fn get_ptt_status() -> Result<LocalPttStatus, String> {
-    let response =
-        flowstt_engine::ipc::handlers::handle_request(Request::GetPttStatus).await;
+    let response = flowstt_engine::ipc::handlers::handle_request(Request::GetPttStatus).await;
     match response {
         Response::PttStatus(status) => Ok(LocalPttStatus {
             mode: status.mode,
@@ -425,10 +421,9 @@ async fn get_ptt_status() -> Result<LocalPttStatus, String> {
 /// Set the auto-mode toggle hotkeys
 #[tauri::command]
 async fn set_auto_toggle_hotkeys(hotkeys: Vec<HotkeyCombination>) -> Result<(), String> {
-    let response = flowstt_engine::ipc::handlers::handle_request(
-        Request::SetAutoToggleHotkeys { hotkeys },
-    )
-    .await;
+    let response =
+        flowstt_engine::ipc::handlers::handle_request(Request::SetAutoToggleHotkeys { hotkeys })
+            .await;
     match response {
         Response::Ok => Ok(()),
         Response::Error { message } => Err(message),
@@ -439,8 +434,7 @@ async fn set_auto_toggle_hotkeys(hotkeys: Vec<HotkeyCombination>) -> Result<(), 
 /// Toggle between Automatic and PushToTalk modes
 #[tauri::command]
 async fn toggle_auto_mode() -> Result<TranscriptionMode, String> {
-    let response =
-        flowstt_engine::ipc::handlers::handle_request(Request::ToggleAutoMode).await;
+    let response = flowstt_engine::ipc::handlers::handle_request(Request::ToggleAutoMode).await;
     match response {
         Response::Ok => {
             let status_response =
@@ -468,8 +462,7 @@ struct LocalHistoryEntry {
 /// Get transcription history
 #[tauri::command]
 async fn get_history() -> Result<Vec<LocalHistoryEntry>, String> {
-    let response =
-        flowstt_engine::ipc::handlers::handle_request(Request::GetHistory).await;
+    let response = flowstt_engine::ipc::handlers::handle_request(Request::GetHistory).await;
     match response {
         Response::History { entries } => Ok(entries
             .into_iter()
@@ -488,10 +481,8 @@ async fn get_history() -> Result<Vec<LocalHistoryEntry>, String> {
 /// Delete a history entry
 #[tauri::command]
 async fn delete_history_entry(id: String) -> Result<(), String> {
-    let response = flowstt_engine::ipc::handlers::handle_request(
-        Request::DeleteHistoryEntry { id },
-    )
-    .await;
+    let response =
+        flowstt_engine::ipc::handlers::handle_request(Request::DeleteHistoryEntry { id }).await;
     match response {
         Response::Ok => Ok(()),
         Response::Error { message } => Err(message),
@@ -511,7 +502,9 @@ fn get_theme_mode() -> Result<ThemeMode, String> {
 fn set_theme_mode(mode: ThemeMode, app_handle: AppHandle) -> Result<(), String> {
     let mut config = Config::load();
     config.theme_mode = mode.clone();
-    config.save().map_err(|e| format!("Failed to save config: {}", e))?;
+    config
+        .save()
+        .map_err(|e| format!("Failed to save config: {}", e))?;
     app_handle
         .emit("theme-changed", &mode)
         .map_err(|e| format!("Failed to emit theme event: {}", e))?;
@@ -576,11 +569,9 @@ async fn complete_setup(
     }
 
     // Set transcription mode on engine
-    let _ = flowstt_engine::ipc::handlers::handle_request(
-        Request::SetTranscriptionMode {
-            mode: transcription_mode,
-        },
-    )
+    let _ = flowstt_engine::ipc::handlers::handle_request(Request::SetTranscriptionMode {
+        mode: transcription_mode,
+    })
     .await;
 
     app_handle
@@ -593,10 +584,8 @@ async fn complete_setup(
 /// Start a test audio capture on a device for level metering.
 #[tauri::command]
 async fn test_audio_device(device_id: String) -> Result<(), String> {
-    let response = flowstt_engine::ipc::handlers::handle_request(
-        Request::TestAudioDevice { device_id },
-    )
-    .await;
+    let response =
+        flowstt_engine::ipc::handlers::handle_request(Request::TestAudioDevice { device_id }).await;
     match response {
         Response::Ok => Ok(()),
         Response::Error { message } => Err(message),
@@ -668,16 +657,27 @@ fn log_to_file(level: String, message: String) {
 pub fn run() {
     let app_t0 = Instant::now();
 
-    // Parse --headless flag
+    // Parse --headless and --test-mode flags
     let headless = std::env::args().any(|arg| arg == "--headless");
+    let test_mode = std::env::args().any(|arg| arg == "--test-mode");
 
     // Initialize logging (single subscriber for both engine and GUI)
     init_logging();
 
-    info!("[Startup] run() entered (headless={})", headless);
+    // Set test mode state before tray setup so conditional menu items are available
+    if test_mode {
+        flowstt_engine::test_mode::set_test_mode(true);
+        info!("[Startup] Test mode activated");
+    }
+
+    info!(
+        "[Startup] run() entered (headless={}, test_mode={})",
+        headless, test_mode
+    );
     configure_wayland_workarounds();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             ipc_server_handle: Mutex::new(None),
@@ -701,9 +701,7 @@ pub fn run() {
             });
 
             // Initialize the engine (audio backends, transcription, IPC server, etc.)
-            let ipc_handle = tauri::async_runtime::block_on(async {
-                flowstt_engine::init().await
-            });
+            let ipc_handle = tauri::async_runtime::block_on(async { flowstt_engine::init().await });
 
             match ipc_handle {
                 Ok(handle) => {
@@ -730,21 +728,18 @@ pub fn run() {
                     let _ = main_win.hide();
                 }
 
-                let _setup_win = WebviewWindowBuilder::new(
-                    app,
-                    "setup",
-                    WebviewUrl::App("setup.html".into()),
-                )
-                .title("FlowSTT Setup")
-                .inner_size(600.0, 500.0)
-                .min_inner_size(500.0, 400.0)
-                .center()
-                .decorations(true)
-                .transparent(false)
-                .shadow(true)
-                .visible(true)
-                .build()
-                .expect("Failed to create setup window");
+                let _setup_win =
+                    WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
+                        .title("FlowSTT Setup")
+                        .inner_size(600.0, 500.0)
+                        .min_inner_size(500.0, 400.0)
+                        .center()
+                        .decorations(true)
+                        .transparent(false)
+                        .shadow(true)
+                        .visible(true)
+                        .build()
+                        .expect("Failed to create setup window");
 
                 let app_handle = app.handle().clone();
                 app.listen("setup-complete", move |_event| {

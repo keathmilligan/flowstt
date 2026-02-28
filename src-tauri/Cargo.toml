@@ -37,6 +37,7 @@ flowstt-common = { path = "../src-common" }
 
 # Core engine - audio capture, transcription, IPC server
 flowstt-engine = { path = "../src-engine" }
+tauri-plugin-dialog = "2"
 
 # Windows-specific dependencies for named pipes and Win32 APIs
 [target.'cfg(target_os = "windows")'.dependencies]

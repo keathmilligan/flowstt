@@ -57,6 +57,9 @@ hound = "3.5"
 rustfft = "6.2"
 futures = "0.3.31"
 
+# Audio playback for test mode (WAV files only)
+rodio = { version = "0.22", default-features = false, features = ["wav", "playback"] }
+
 # =============================================================================
 # Platform-specific dependencies
 # =============================================================================

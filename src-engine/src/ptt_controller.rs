@@ -112,8 +112,9 @@ fn ptt_controller_loop() {
     get_ptt_thread_running().store(false, Ordering::SeqCst);
 }
 
-/// Handle PTT key press - start audio capture
-fn handle_ptt_pressed() {
+/// Handle PTT key press - start audio capture.
+/// Public within the crate so the test mode orchestrator can trigger PTT programmatically.
+pub(crate) fn handle_ptt_pressed() {
     if get_ptt_active().load(Ordering::SeqCst) {
         return;
     }
@@ -159,8 +160,9 @@ fn handle_ptt_pressed() {
     }
 }
 
-/// Handle PTT key release - stop audio capture and submit segment
-fn handle_ptt_released() {
+/// Handle PTT key release - stop audio capture and submit segment.
+/// Public within the crate so the test mode orchestrator can trigger PTT programmatically.
+pub(crate) fn handle_ptt_released() {
     if !get_ptt_active().load(Ordering::SeqCst) {
         return;
     }

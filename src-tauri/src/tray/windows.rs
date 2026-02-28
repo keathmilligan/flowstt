@@ -7,6 +7,8 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager, WebviewUrl, WebviewWindow,
 };
+use tauri_plugin_dialog::DialogExt;
+use tracing::{error, info, warn};
 use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
 };
@@ -30,17 +32,38 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         MenuItem::with_id(app, menu_ids::ABOUT, menu_labels::ABOUT, true, None::<&str>)?;
     let exit_item = MenuItem::with_id(app, menu_ids::EXIT, menu_labels::EXIT, true, None::<&str>)?;
 
-    // Build menu
-    let menu = Menu::with_items(
-        app,
-        &[
-            &show_item,
-            &settings_item,
-            &about_item,
-            &PredefinedMenuItem::separator(app)?,
-            &exit_item,
-        ],
-    )?;
+    // Build menu -- conditionally include test mode item
+    let menu = if flowstt_engine::test_mode::is_test_mode() {
+        let run_test_item = MenuItem::with_id(
+            app,
+            menu_ids::RUN_TEST,
+            menu_labels::RUN_TEST,
+            true,
+            None::<&str>,
+        )?;
+        Menu::with_items(
+            app,
+            &[
+                &show_item,
+                &settings_item,
+                &about_item,
+                &run_test_item,
+                &PredefinedMenuItem::separator(app)?,
+                &exit_item,
+            ],
+        )?
+    } else {
+        Menu::with_items(
+            app,
+            &[
+                &show_item,
+                &settings_item,
+                &about_item,
+                &PredefinedMenuItem::separator(app)?,
+                &exit_item,
+            ],
+        )?
+    };
 
     // Build tray icon
     let _tray = TrayIconBuilder::new()
@@ -72,12 +95,44 @@ fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent) {
         id if id == menu_ids::ABOUT => {
             show_about_window(app);
         }
+        id if id == menu_ids::RUN_TEST => {
+            handle_run_test(app);
+        }
         id if id == menu_ids::EXIT => {
             shutdown_engine();
             app.exit(0);
         }
         _ => {}
     }
+}
+
+/// Handle the "Run Test (WAV Directory)..." menu item.
+/// Opens a native directory picker and starts the test orchestrator.
+fn handle_run_test(app: &tauri::AppHandle) {
+    if flowstt_engine::test_mode::is_test_run_active() {
+        warn!("[TestMode] A test run is already in progress, ignoring request");
+        return;
+    }
+
+    app.dialog()
+        .file()
+        .pick_folder(|maybe_dir| match maybe_dir {
+            Some(dir) => {
+                let path = dir.into_path().expect("Failed to convert dialog path");
+                info!("[TestMode] Selected directory: {:?}", path);
+                match flowstt_engine::test_mode::start_test_run(path) {
+                    Ok(()) => {
+                        info!("[TestMode] Test run started");
+                    }
+                    Err(e) => {
+                        error!("[TestMode] Failed to start test run: {}", e);
+                    }
+                }
+            }
+            None => {
+                info!("[TestMode] Directory picker cancelled");
+            }
+        });
 }
 
 /// Show the main window, recreating if necessary.

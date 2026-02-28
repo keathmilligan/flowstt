@@ -18,6 +18,7 @@ pub mod processor;
 pub mod ptt_controller;
 pub mod state;
 pub mod test_capture;
+pub mod test_mode;
 pub mod transcription;
 
 pub use audio_loop::{

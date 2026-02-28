@@ -2,7 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for all application windows",
-  "windows": ["main", "visualization", "about", "config", "setup"],
+  "windows": [
+    "main",
+    "visualization",
+    "about",
+    "config",
+    "setup"
+  ],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -16,6 +22,7 @@
     "core:webview:default",
     "core:webview:allow-create-webview-window",
     "core:webview:allow-webview-close",
-    "shell:allow-open"
+    "shell:allow-open",
+    "dialog:default"
   ]
 }
