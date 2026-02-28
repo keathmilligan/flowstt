@@ -136,6 +136,20 @@ img {
   pointer-events: none;
 }
 
+.beta-badge {
+  display: inline-block;
+  background: var(--beta-badge-bg);
+  color: var(--beta-badge-text);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0.15em 0.5em;
+  border-radius: 3px;
+  line-height: 1;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
 /* Mini waveform in header - hidden by default, shown when capturing */
 .mini-waveform {
   display: none;

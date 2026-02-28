@@ -91,6 +91,18 @@ body {
 .about-version {
     font-size: 13px;
     color: var(--about-version-text);
+    margin-bottom: 8px;
+}
+
+.about-beta-badge {
+    display: inline-block;
+    background: var(--beta-badge-bg);
+    color: var(--beta-badge-text);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 0.2em 0.6em;
+    border-radius: 3px;
     margin-bottom: 16px;
 }
 

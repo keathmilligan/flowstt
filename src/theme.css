@@ -100,6 +100,10 @@
   --link-color: #3b82f6;
   --link-hover: #60a5fa;
 
+  /* --- Beta Badge --- */
+  --beta-badge-bg: rgba(59, 130, 246, 0.2);
+  --beta-badge-text: #60a5fa;
+
   /* --- About Window --- */
   --about-version-text: #6b7280;
   --about-description-text: #9ca3af;
@@ -240,6 +244,10 @@
   /* --- Links --- */
   --link-color: #2563eb;
   --link-hover: #1d4ed8;
+
+  /* --- Beta Badge --- */
+  --beta-badge-bg: rgba(37, 99, 235, 0.15);
+  --beta-badge-text: #2563eb;
 
   /* --- About Window --- */
   --about-version-text: #6b7280;
