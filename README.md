@@ -11,15 +11,15 @@
 [![Latest Release](https://img.shields.io/github/v/release/flowstt/flowstt)](https://github.com/flowstt/flowstt/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/flowstt/flowstt/blob/master/LICENSE)
 
-https://github.com/user-attachments/assets/1aa53a46-d864-4881-852d-e000872604b2
-
 ## 🎉 Beta Now Available!
 
 FlowSTT is now in **public beta** for **Windows** and **macOS**. [**Download the latest release →**](https://github.com/flowstt/flowstt/releases)
 
+https://github.com/user-attachments/assets/1aa53a46-d864-4881-852d-e000872604b2
+
 FlowSTT is a free, privacy-first speech-to-text application that runs entirely on your local machine. No subscriptions, no signups, no cloud services —- your voice data never leaves your computer.
 
-![FlowSTT Screenshot](images/flowstt-screenshot.png)
+![FlowSTT Screenshot](images/screenshot.png)
 
 ## Features
 
