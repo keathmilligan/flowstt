@@ -14,7 +14,7 @@
 
 FlowSTT is now in **public beta** for **Windows** and **macOS**. [**Download the latest release →**](https://github.com/flowstt/flowstt#installation)
 
-https://github.com/user-attachments/assets/1aa53a46-d864-4881-852d-e000872604b2
+https://github.com/user-attachments/assets/cad3368d-2201-4328-9804-62a18ec740d2
 
 FlowSTT is a free, privacy-first speech-to-text application that runs entirely on your local machine. No subscriptions, no signups, no cloud services —- your voice data never leaves your computer.
 
