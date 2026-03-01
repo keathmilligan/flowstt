@@ -631,20 +631,8 @@ unsafe fn handle_raw_input(hrawinput: HRAWINPUT) {
 
     // Map VK code to KeyCode
     let key_code = match raw_input_to_keycode(vk_code, is_e0, make_code) {
-        Some(k) => {
-            debug!(
-                "[Hotkey] Raw input: vk=0x{:02X} make=0x{:02X} e0={} up={} → {:?}",
-                vk_code, make_code, is_e0, is_key_up, k
-            );
-            k
-        }
-        None => {
-            debug!(
-                "[Hotkey] Raw input: vk=0x{:02X} make=0x{:02X} e0={} up={} → unmapped",
-                vk_code, make_code, is_e0, is_key_up
-            );
-            return; // Unmapped key, ignore
-        }
+        Some(k) => k,
+        None => return, // Unmapped key, ignore
     };
 
     HOTKEY_CONTEXT.with(|ctx| {
