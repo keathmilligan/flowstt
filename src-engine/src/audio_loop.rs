@@ -228,6 +228,9 @@ impl TranscriptionCallback for TranscriptionEventBroadcaster {
             return;
         }
 
+        // Append a trailing space so pasted segments don't merge with adjacent text
+        let text = format!("{} ", trimmed);
+
         info!("[Transcription] Complete: {}", text);
 
         // Add to persistent history and get the enriched entry

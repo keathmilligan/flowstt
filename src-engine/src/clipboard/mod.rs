@@ -70,8 +70,8 @@ pub fn copy_and_paste(text: &str, auto_paste_enabled: bool, delay_ms: u32) {
 
     let backend = create_backend();
 
-    // Always write to clipboard
-    if let Err(e) = backend.write_clipboard(trimmed) {
+    // Always write to clipboard (preserve original text including trailing space)
+    if let Err(e) = backend.write_clipboard(text) {
         warn!("[Clipboard] Failed to write clipboard: {}", e);
         return;
     }

@@ -131,34 +131,42 @@ fn run_test_sequence(wav_files: &[std::path::PathBuf]) {
             file_name
         );
 
-        // 1. Start playback
+        // 0. On the first file, pause 10 seconds so the user (and any screen
+        //    recording / demo setup) has time to get ready before playback begins.
+        if idx == 0 {
+            tracing::info!("[TestMode] Waiting 10 seconds before starting first file...");
+            std::thread::sleep(Duration::from_secs(10));
+        }
+
+        // 1. Drain stale events before PTT press so we have a clean slate
+        while event_rx.try_recv().is_ok() {}
+
+        // 2. Simulate PTT press (starts capture)
+        tracing::debug!("[TestMode] [{}/{}] PTT press", idx + 1, total);
+        crate::ptt_controller::handle_ptt_pressed();
+
+        // 3. Wait 200ms for capture to fully initialise before playing audio
+        std::thread::sleep(Duration::from_millis(200));
+
+        // 4. Start playback
         let playback_done = match playback::play_wav(wav_path) {
             Ok(done_rx) => done_rx,
             Err(e) => {
                 tracing::error!("[TestMode] [{}/{}] Playback error: {}", idx + 1, total, e);
+                // Release PTT since we already pressed it
+                crate::ptt_controller::handle_ptt_released();
                 skip_count += 1;
                 continue;
             }
         };
 
-        // 2. Wait 100ms settling delay for loopback capture to start receiving audio
-        std::thread::sleep(Duration::from_millis(100));
-
-        // 3. Drain stale events before PTT press so we have a clean slate
-        while event_rx.try_recv().is_ok() {}
-
-        // 4. Simulate PTT press (starts capture)
-        tracing::debug!("[TestMode] [{}/{}] PTT press", idx + 1, total);
-        crate::ptt_controller::handle_ptt_pressed();
-
         // 5. Wait for playback to complete
         let _ = playback_done.recv();
         tracing::debug!("[TestMode] [{}/{}] Playback finished", idx + 1, total);
 
-        // 6. Wait for any remaining loopback audio to be captured.
-        //    WASAPI loopback has inherent latency -- audio in the output buffer
-        //    may not have been delivered to the capture side yet.
-        std::thread::sleep(Duration::from_millis(500));
+        // 6. Wait 200ms for any remaining loopback audio to be captured
+        //    before releasing PTT.
+        std::thread::sleep(Duration::from_millis(200));
 
         // 7. Simulate PTT release (triggers segment submission for transcription)
         tracing::debug!("[TestMode] [{}/{}] PTT release", idx + 1, total);
@@ -254,10 +262,7 @@ fn run_test_sequence(wav_files: &[std::path::PathBuf]) {
         // If got_speech_ended but not got_transcription, it was a no-speech result
         // -- counted as neither success nor timeout (just skipped by Whisper)
 
-        // 9. Pause 2 seconds before next file
-        if idx + 1 < total {
-            std::thread::sleep(Duration::from_secs(2));
-        }
+        // (no inter-segment pause in demo/test mode)
     }
 
     tracing::info!(
