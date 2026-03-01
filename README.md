@@ -45,8 +45,6 @@ Download the latest release from the [Releases page](https://github.com/flowstt/
 
 ***Linux Support Coming Soon!***
 
----
-
 ## License
 
-MIT
+[MIT](https://github.com/flowstt/flowstt/blob/master/LICENSE) - Copyright 2026 KMX Consulting LLC
