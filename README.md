@@ -6,9 +6,8 @@
 
 ---
 
-[![CI](https://img.shields.io/github/actions/workflow/status/flowstt/flowstt/ci.yml?label=CI)](https://github.com/flowstt/flowstt/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/actions/workflow/status/flowstt/flowstt/release.yml?label=Release)](https://github.com/flowstt/flowstt/actions/workflows/release.yml)
-[![Latest Release](https://img.shields.io/github/v/release/flowstt/flowstt)](https://github.com/flowstt/flowstt/releases)
+[![CI](https://github.com/flowstt/flowstt/actions/workflows/ci.yml/badge.svg)](https://github.com/flowstt/flowstt/actions/workflows/ci.yml)
+[![Release](https://github.com/flowstt/flowstt/actions/workflows/release.yml/badge.svg)](https://github.com/flowstt/flowstt/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/flowstt/flowstt/blob/master/LICENSE)
 
 ## 🎉 Beta Now Available!
@@ -38,9 +37,9 @@ Download the latest release from the [Releases page](https://github.com/flowstt/
 **Current release:** v0.1.18
 
 **Download packages**
-- Windows: [FlowSTT_0.1.18_x64.msi](https://github.com/flowstt/flowstt/releases/download/v0.1.18/FlowSTT_0.1.18_x64.msi)
-- macOS (Apple Silicon M-Series): [FlowSTT_aarch64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.18/FlowSTT_aarch64.dmg)
-- macOS (Legacy Intel x64): [FlowSTT_x64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.18/FlowSTT_x64.dmg)
+- Windows: [FlowSTT_0.1.18_x64_en-US.msi](https://github.com/flowstt/flowstt/releases/download/v0.1.18/FlowSTT_0.1.18_x64_en-US.msi)
+- macOS (Apple Silicon M-Series): [FlowSTT_0.1.18_aarch64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.18/FlowSTT_0.1.18_aarch64.dmg)
+- macOS (Legacy Intel x64): [FlowSTT_0.1.18_x64.dmg](https://github.com/flowstt/flowstt/releases/download/v0.1.18/FlowSTT_0.1.18_x64.dmg)
 <!-- release-links:end -->
 
 ***Linux Support Coming Soon!***
