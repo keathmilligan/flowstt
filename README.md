@@ -12,7 +12,7 @@
 
 ## 🎉 Beta Now Available!
 
-FlowSTT is now in **public beta** for **Windows** and **macOS**. [**Download the latest release →**](https://github.com/flowstt/flowstt/releases)
+FlowSTT is now in **public beta** for **Windows** and **macOS**. [**Download the latest release →**](https://github.com/flowstt/flowstt#installation)
 
 https://github.com/user-attachments/assets/1aa53a46-d864-4881-852d-e000872604b2
 
