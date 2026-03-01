@@ -139,24 +139,52 @@ pub async fn init() -> Result<tokio::task::JoinHandle<()>, String> {
         }
     }
 
-    // Auto-configure default audio source and start capture immediately,
+    // Auto-configure audio sources and start capture immediately,
     // but only if first-time setup is already complete.
     if !first_run {
         let state_arc = state::get_service_state();
 
-        // Get default input device
-        let default_source = platform::get_backend().and_then(|b| {
-            let devices = b.list_input_devices();
-            devices.into_iter().next().map(|d| d.id)
+        // Resolve primary input device: prefer saved preference, fall back to first available.
+        let source1_id = platform::get_backend().and_then(|b| {
+            let input_devices = b.list_input_devices();
+            if let Some(preferred_id) = loaded_config.preferred_source1_id.as_deref() {
+                if let Some(found) = input_devices.iter().find(|d| d.id == preferred_id) {
+                    info!("Restoring saved primary audio source: {}", found.id);
+                    return Some(found.id.clone());
+                }
+                warn!(
+                    "Saved primary device {:?} not found; falling back to first available",
+                    preferred_id
+                );
+            }
+            input_devices.into_iter().next().map(|d| {
+                info!("Using default primary audio source: {}", d.id);
+                d.id
+            })
         });
 
-        if let Some(source_id) = default_source {
-            info!("Using default audio source: {}", source_id);
+        // Resolve reference (system) device: prefer saved preference, fall back to None.
+        let source2_id = platform::get_backend().and_then(|b| {
+            let preferred_id = loaded_config.preferred_source2_id.as_deref()?;
+            let system_devices = b.list_system_devices();
+            if let Some(found) = system_devices.iter().find(|d| d.id == preferred_id) {
+                info!("Restoring saved reference audio source: {}", found.id);
+                Some(found.id.clone())
+            } else {
+                warn!(
+                    "Saved reference device {:?} not found; starting with no reference source",
+                    preferred_id
+                );
+                None
+            }
+        });
 
-            // Configure state with default source
+        if let Some(source_id) = source1_id {
+            // Configure state with resolved sources
             {
                 let mut state = state_arc.lock().await;
                 state.source1_id = Some(source_id);
+                state.source2_id = source2_id;
             }
 
             // Start capture (handles both Automatic and PTT modes)

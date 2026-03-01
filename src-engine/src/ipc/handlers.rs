@@ -299,6 +299,16 @@ pub async fn handle_request(request: Request) -> Response {
                 source1_id, source2_id
             );
 
+            // Persist device selection to config so it is restored on next startup
+            {
+                let mut config = crate::config::Config::load();
+                config.preferred_source1_id = source1_id.clone();
+                config.preferred_source2_id = source2_id.clone();
+                if let Err(e) = crate::config::save_config(&config) {
+                    warn!("Failed to save device selection to config: {}", e);
+                }
+            }
+
             // Stop current capture / PTT monitoring if running
             if was_active {
                 stop_capture().await;

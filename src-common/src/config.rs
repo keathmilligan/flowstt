@@ -46,6 +46,12 @@ pub struct Config {
     /// Whether the main window is pinned above all other windows
     #[serde(default)]
     pub always_on_top: bool,
+    /// Preferred primary audio input device ID (restored on startup)
+    #[serde(default)]
+    pub preferred_source1_id: Option<String>,
+    /// Preferred reference (system) audio device ID (restored on startup)
+    #[serde(default)]
+    pub preferred_source2_id: Option<String>,
 }
 
 fn default_auto_toggle_hotkeys() -> Vec<HotkeyCombination> {
@@ -79,6 +85,12 @@ struct LegacyConfig {
     auto_paste_delay_ms: Option<u32>,
     /// UI theme mode (may be absent in old configs)
     theme_mode: Option<ThemeMode>,
+    /// Preferred primary audio input device ID
+    #[serde(default)]
+    preferred_source1_id: Option<String>,
+    /// Preferred reference (system) audio device ID
+    #[serde(default)]
+    preferred_source2_id: Option<String>,
 }
 
 impl Config {
@@ -159,6 +171,8 @@ impl Config {
             auto_paste_delay_ms: 50,
             theme_mode: ThemeMode::default(),
             always_on_top: false,
+            preferred_source1_id: None,
+            preferred_source2_id: None,
         }
     }
 
@@ -204,6 +218,8 @@ impl Config {
             auto_paste_delay_ms: legacy.auto_paste_delay_ms.unwrap_or(50),
             theme_mode: legacy.theme_mode.unwrap_or_default(),
             always_on_top: false,
+            preferred_source1_id: legacy.preferred_source1_id,
+            preferred_source2_id: legacy.preferred_source2_id,
         }
     }
 }
