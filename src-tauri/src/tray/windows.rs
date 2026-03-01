@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use tauri::{
     image::Image,
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
     Manager, WebviewUrl, WebviewWindow,
 };
@@ -13,14 +13,28 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
 };
 
+use flowstt_common::config::Config;
+
 use super::{menu_ids, menu_labels, shutdown_engine};
 
 /// Set up the system tray on Windows.
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let icon = load_tray_icon(app);
 
+    // Load config to restore always-on-top state
+    let config = Config::load();
+    let always_on_top_enabled = config.always_on_top;
+
     // Create menu items
     let show_item = MenuItem::with_id(app, menu_ids::SHOW, menu_labels::SHOW, true, None::<&str>)?;
+    let always_on_top_item = CheckMenuItem::with_id(
+        app,
+        menu_ids::ALWAYS_ON_TOP,
+        menu_labels::ALWAYS_ON_TOP,
+        true,
+        always_on_top_enabled,
+        None::<&str>,
+    )?;
     let settings_item = MenuItem::with_id(
         app,
         menu_ids::SETTINGS,
@@ -45,6 +59,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             app,
             &[
                 &show_item,
+                &always_on_top_item,
                 &settings_item,
                 &about_item,
                 &run_test_item,
@@ -57,6 +72,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             app,
             &[
                 &show_item,
+                &always_on_top_item,
                 &settings_item,
                 &about_item,
                 &PredefinedMenuItem::separator(app)?,
@@ -65,8 +81,11 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         )?
     };
 
+    // Clone the check item so the menu event closure can update its state
+    let always_on_top_item_clone = always_on_top_item.clone();
+
     // Build tray icon
-    let _tray = TrayIconBuilder::new()
+    let _tray = TrayIconBuilder::with_id("main-tray")
         .icon(icon)
         .menu(&menu)
         .tooltip("FlowSTT")
@@ -75,8 +94,8 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 show_main_window(tray.app_handle());
             }
         })
-        .on_menu_event(|app, event| {
-            handle_menu_event(app, &event);
+        .on_menu_event(move |app, event| {
+            handle_menu_event(app, &event, &always_on_top_item_clone);
         })
         .build(app)?;
 
@@ -84,10 +103,17 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Handle menu item clicks.
-fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent) {
+fn handle_menu_event(
+    app: &tauri::AppHandle,
+    event: &tauri::menu::MenuEvent,
+    always_on_top_item: &tauri::menu::CheckMenuItem<tauri::Wry>,
+) {
     match event.id.as_ref() {
         id if id == menu_ids::SHOW => {
             show_main_window(app);
+        }
+        id if id == menu_ids::ALWAYS_ON_TOP => {
+            toggle_always_on_top(app, always_on_top_item);
         }
         id if id == menu_ids::SETTINGS => {
             show_config_window(app);
@@ -104,6 +130,31 @@ fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent) {
         }
         _ => {}
     }
+}
+
+/// Toggle the main window's always-on-top state and persist the preference.
+fn toggle_always_on_top(
+    app: &tauri::AppHandle,
+    check_item: &tauri::menu::CheckMenuItem<tauri::Wry>,
+) {
+    let mut config = Config::load();
+    config.always_on_top = !config.always_on_top;
+    let enabled = config.always_on_top;
+
+    if let Err(e) = config.save() {
+        error!(
+            "[Tray] Failed to save config after always-on-top toggle: {}",
+            e
+        );
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(e) = window.set_always_on_top(enabled) {
+            error!("[Tray] Failed to set always-on-top on window: {}", e);
+        }
+    }
+
+    let _ = check_item.set_checked(enabled);
 }
 
 /// Handle the "Run Test (WAV Directory)..." menu item.
@@ -178,6 +229,11 @@ fn recreate_main_window(app: &tauri::AppHandle) {
             .build();
 
     if let Ok(window) = window {
+        // Restore always-on-top state before showing
+        let config = Config::load();
+        if config.always_on_top {
+            let _ = window.set_always_on_top(true);
+        }
         show_and_focus_window(&window);
     }
 }

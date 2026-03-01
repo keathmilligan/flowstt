@@ -43,6 +43,9 @@ pub struct Config {
     /// UI theme mode: auto (follow OS), light, or dark
     #[serde(default)]
     pub theme_mode: ThemeMode,
+    /// Whether the main window is pinned above all other windows
+    #[serde(default)]
+    pub always_on_top: bool,
 }
 
 fn default_auto_toggle_hotkeys() -> Vec<HotkeyCombination> {
@@ -155,6 +158,7 @@ impl Config {
             auto_paste_enabled: true,
             auto_paste_delay_ms: 50,
             theme_mode: ThemeMode::default(),
+            always_on_top: false,
         }
     }
 
@@ -199,6 +203,7 @@ impl Config {
             auto_paste_enabled: legacy.auto_paste_enabled.unwrap_or(true),
             auto_paste_delay_ms: legacy.auto_paste_delay_ms.unwrap_or(50),
             theme_mode: legacy.theme_mode.unwrap_or_default(),
+            always_on_top: false,
         }
     }
 }

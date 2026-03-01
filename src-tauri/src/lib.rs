@@ -720,6 +720,18 @@ pub fn run() {
                 warn!("[FlowSTT] Failed to set up system tray: {}", e);
             }
 
+            // Restore always-on-top state from config
+            {
+                let config = Config::load();
+                if config.always_on_top {
+                    if let Some(main_win) = app.get_webview_window("main") {
+                        if let Err(e) = main_win.set_always_on_top(true) {
+                            warn!("[Startup] Failed to restore always-on-top: {}", e);
+                        }
+                    }
+                }
+            }
+
             // First-run detection: show setup wizard if no config exists
             if Config::needs_setup() && !headless {
                 info!("[Startup] First run detected - showing setup wizard");
