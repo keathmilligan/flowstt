@@ -400,10 +400,10 @@ jobs:
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "darwin-aarch64": {
-                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/FlowSTT_aarch64.dmg"
+                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/FlowSTT_${VERSION}_aarch64.dmg"
               },
               "darwin-x86_64": {
-                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/FlowSTT_x64.dmg"
+                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/FlowSTT_${VERSION}_x64.dmg"
               },
               "windows-x86_64": {
                 "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/FlowSTT_${VERSION}_x64-setup.exe"
