@@ -281,6 +281,7 @@ fn forward_event_to_tauri(app_handle: &AppHandle, event: &EventType) {
                     error: error.clone(),
                 },
             );
+            tray::update_tray_icon(app_handle, *capturing);
         }
         EventType::ModelDownloadProgress { percent } => {
             let _ = app_handle.emit("model-download-progress", percent);
