@@ -6,19 +6,21 @@
 
 mod tray;
 
-use flowstt_common::config::{Config, ThemeMode};
+use flowstt_common::config::{Config, LogLevel, ThemeMode};
 use flowstt_common::ipc::{EventType, Request, Response};
 use flowstt_common::{
     runtime_mode, AudioDevice, HotkeyCombination, RecordingMode, RuntimeMode, TranscriptionMode,
 };
 use std::env;
+use std::sync::Arc;
 use std::time::Instant;
 use tauri::webview::WebviewWindowBuilder;
 use tauri::WebviewUrl;
 use tauri::{AppHandle, Emitter, Listener, Manager, State};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{reload, EnvFilter};
 
 /// Detect if running on Wayland and set workaround env vars (Linux-specific)
 #[cfg(target_os = "linux")]
@@ -39,67 +41,175 @@ fn configure_wayland_workarounds() {
 #[cfg(not(target_os = "linux"))]
 fn configure_wayland_workarounds() {}
 
-/// Initialize logging based on runtime mode.
-fn init_logging() {
-    let mode = runtime_mode();
+// ─── Log line payload (emitted to frontend) ──────────────────────────────────
 
-    match mode {
-        RuntimeMode::Production => {
-            if let Err(e) = flowstt_common::logging::ensure_log_dir() {
-                eprintln!(
-                    "Warning: Failed to create log directory, using temp dir: {}",
-                    e
-                );
+/// A single pre-formatted log line sent to the frontend log viewer.
+///
+/// The line is formatted identically to what `tracing_subscriber::fmt` writes
+/// to the log file, so history (read from file) and live events render the same.
+///
+/// Format: `{timestamp}  {LEVEL} {target}: {message}\n`
+/// e.g.  `2026-03-02T00:27:33.464210Z  INFO flowstt_lib: engine started`
+#[derive(serde::Serialize, Clone)]
+struct LogLinePayload {
+    line: String,
+}
+
+// ─── TauriLogLayer ───────────────────────────────────────────────────────────
+
+/// A `tracing_subscriber::Layer` that forwards log events to the frontend
+/// via a bounded mpsc channel. The channel receiver is drained by a task
+/// spawned once `AppHandle` is available (after `Builder::build()`).
+struct TauriLogLayer {
+    sender: tokio::sync::mpsc::Sender<LogLinePayload>,
+}
+
+impl<S> tracing_subscriber::Layer<S> for TauriLogLayer
+where
+    S: tracing::Subscriber,
+{
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        use tracing_subscriber::field::Visit;
+
+        struct MessageVisitor(String);
+        impl Visit for MessageVisitor {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if field.name() == "message" {
+                    self.0 = format!("{:?}", value);
+                }
             }
+            fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                if field.name() == "message" {
+                    self.0 = value.to_string();
+                }
+            }
+        }
 
-            let log_path = flowstt_common::logging::app_log_path();
-            let log_dir = log_path.parent().unwrap();
+        let mut visitor = MessageVisitor(String::new());
+        event.record(&mut visitor);
 
-            let file_appender = match tracing_appender::rolling::RollingFileAppender::builder()
+        // Format identically to tracing_subscriber::fmt's default output so that
+        // live events and file-read history look the same in the log viewer.
+        // File format: "2026-03-02T00:27:33.464210Z  INFO flowstt_lib: message"
+        let now = chrono::Utc::now();
+        let level = event.metadata().level().to_string().to_uppercase();
+        let target = event.metadata().target();
+        // Pad level to 5 chars (matching tracing_subscriber's default alignment)
+        let line = format!(
+            "{}  {:5} {}: {}",
+            now.format("%Y-%m-%dT%H:%M:%S%.6fZ"),
+            level,
+            target,
+            visitor.0,
+        );
+        let payload = LogLinePayload { line };
+
+        // Non-blocking send; drop if channel is full to avoid blocking the caller.
+        let _ = self.sender.try_send(payload);
+    }
+}
+
+// ─── Log state (reload handle + channel sender) ──────────────────────────────
+
+/// State holding the runtime-reloadable log filter handle and log-line sender.
+struct LogState {
+    /// Allows reloading the `EnvFilter` at runtime (e.g. from `set_log_level`).
+    reload_handle: Arc<reload::Handle<EnvFilter, tracing_subscriber::Registry>>,
+}
+
+/// Initialize the layered tracing subscriber.
+///
+/// Returns:
+/// - A `LogState` containing the reload handle (stored in Tauri state).
+/// - An mpsc receiver for log lines (consumed by a forwarder task after app build).
+fn init_logging(initial_level: &LogLevel) -> (LogState, tokio::sync::mpsc::Receiver<LogLinePayload>) {
+    let mode = runtime_mode();
+    let filter_str = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(initial_level.as_filter_str()));
+
+    let (filter_layer, reload_handle) = reload::Layer::new(filter_str);
+
+    // Bounded channel: 1000 log lines buffered for frontend forwarding.
+    let (tx, rx) = tokio::sync::mpsc::channel::<LogLinePayload>(1000);
+    let tauri_layer = TauriLogLayer { sender: tx };
+
+    // Both production and development write to the log file.
+    // Development additionally writes to stdout with ANSI color.
+    if let Err(e) = flowstt_common::logging::ensure_log_dir() {
+        // pre-subscriber bootstrap: cannot use tracing yet
+        eprintln!(
+            "Warning: Failed to create log directory, using temp dir: {}",
+            e
+        );
+    }
+
+    let log_path = flowstt_common::logging::app_log_path();
+    let log_dir = log_path.parent().unwrap();
+
+    let file_appender = match tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .max_log_files(5)
+        .filename_prefix("flowstt-app")
+        .filename_suffix("log")
+        .build(log_dir)
+    {
+        Ok(appender) => appender,
+        Err(e) => {
+            // pre-subscriber bootstrap: cannot use tracing yet
+            eprintln!("Warning: Failed to create log file appender: {}", e);
+            let temp_dir = std::env::temp_dir().join("flowstt-logs");
+            let _ = std::fs::create_dir_all(&temp_dir);
+            tracing_appender::rolling::RollingFileAppender::builder()
                 .rotation(tracing_appender::rolling::Rotation::DAILY)
                 .max_log_files(5)
                 .filename_prefix("flowstt-app")
                 .filename_suffix("log")
-                .build(log_dir)
-            {
-                Ok(appender) => appender,
-                Err(e) => {
-                    eprintln!("Warning: Failed to create log file appender: {}", e);
-                    let temp_dir = std::env::temp_dir().join("flowstt-logs");
-                    let _ = std::fs::create_dir_all(&temp_dir);
-                    tracing_appender::rolling::RollingFileAppender::builder()
-                        .rotation(tracing_appender::rolling::Rotation::DAILY)
-                        .max_log_files(5)
-                        .filename_prefix("flowstt-app")
-                        .filename_suffix("log")
-                        .build(&temp_dir)
-                        .expect("Failed to create temp log file appender")
-                }
-            };
+                .build(&temp_dir)
+                .expect("Failed to create temp log file appender")
+        }
+    };
 
-            let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
-            std::mem::forget(guard);
+    // Use the rolling appender directly (synchronous) instead of non_blocking.
+    // Non-blocking buffers writes in a background channel; forgetting the guard
+    // means that buffer is never flushed, so the log file is empty until the
+    // channel fills or the app exits. Synchronous writes go to the OS
+    // immediately, so get_log_history can read them right away.
+    let file_fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(file_appender)
+        .with_ansi(false);
 
-            tracing_subscriber::fmt()
-                .with_env_filter(
-                    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-                )
-                .with_writer(non_blocking)
-                .with_ansi(false)
+    match mode {
+        RuntimeMode::Production => {
+            tracing_subscriber::registry()
+                .with(filter_layer)
+                .with(file_fmt_layer)
+                .with(tauri_layer)
                 .init();
-
-            info!("Production logging initialized");
         }
         RuntimeMode::Development => {
-            tracing_subscriber::fmt()
-                .with_env_filter(
-                    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug")),
-                )
-                .init();
+            // In development: also write to stdout with ANSI color for live terminal feedback.
+            let stdout_fmt_layer = tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_ansi(true);
 
-            debug!("Development logging initialized (console only)");
+            tracing_subscriber::registry()
+                .with(filter_layer)
+                .with(file_fmt_layer)
+                .with(stdout_fmt_layer)
+                .with(tauri_layer)
+                .init();
         }
     }
+
+    let log_state = LogState {
+        reload_handle: Arc::new(reload_handle),
+    };
+
+    (log_state, rx)
 }
 
 // ─── Application state ───────────────────────────────────────────────────────
@@ -623,6 +733,149 @@ async fn check_accessibility_permission() -> Result<bool, String> {
     Ok(flowstt_engine::hotkey::check_accessibility_permission())
 }
 
+/// Return the raw text of the current session's log file.
+///
+/// Finds the most recently modified `flowstt-app.*.log` file in the log
+/// directory — this is the file the rolling appender is currently writing to.
+/// Returns an empty string if no log file exists yet.
+#[tauri::command]
+fn get_log_history() -> String {
+    let log_dir = flowstt_common::logging::app_log_path()
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::temp_dir().join("flowstt-logs"));
+
+    // Find the most recently modified flowstt-app.*.log file.
+    let most_recent = std::fs::read_dir(&log_dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("flowstt-app.") && name.ends_with(".log")
+        })
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            let modified = meta.modified().ok()?;
+            Some((e.path(), modified))
+        })
+        .max_by_key(|(_, modified)| *modified)
+        .map(|(path, _)| path);
+
+    match most_recent {
+        Some(path) => std::fs::read_to_string(&path).unwrap_or_default(),
+        None => String::new(),
+    }
+}
+
+/// Get the current log level from config.
+#[tauri::command]
+fn get_log_level() -> Result<String, String> {
+    let config = Config::load();
+    Ok(config.log_level.as_filter_str().to_string())
+}
+
+/// Set the minimum log level at runtime and persist to config.
+#[tauri::command]
+fn set_log_level(level: String, state: State<LogState>) -> Result<(), String> {
+    let log_level: LogLevel = match level.as_str() {
+        "error" => LogLevel::Error,
+        "warn" => LogLevel::Warn,
+        "info" => LogLevel::Info,
+        "debug" => LogLevel::Debug,
+        "trace" => LogLevel::Trace,
+        other => return Err(format!("Unknown log level: {}", other)),
+    };
+
+    // Reload the subscriber filter immediately.
+    state
+        .reload_handle
+        .reload(EnvFilter::new(log_level.as_filter_str()))
+        .map_err(|e| format!("Failed to reload log filter: {}", e))?;
+
+    // Persist to config.
+    let mut config = Config::load();
+    config.log_level = log_level;
+    config
+        .save()
+        .map_err(|e| format!("Failed to save config: {}", e))?;
+
+    Ok(())
+}
+
+/// Download all log files as a zip archive via a native save dialog.
+#[tauri::command]
+async fn download_logs(app_handle: AppHandle) -> Result<(), String> {
+    use std::io::Write;
+    use tauri_plugin_dialog::DialogExt;
+
+    let log_dir = flowstt_common::logging::app_log_path()
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::temp_dir().join("flowstt-logs"));
+
+    // Collect *.log files.
+    let entries: Vec<std::path::PathBuf> = match std::fs::read_dir(&log_dir) {
+        Ok(dir) => dir
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("log"))
+            .collect(),
+        Err(_) => vec![],
+    };
+
+    if entries.is_empty() {
+        return Err("no_logs".to_string());
+    }
+
+    // Build zip in memory.
+    let mut zip_buf = std::io::Cursor::new(Vec::<u8>::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut zip_buf);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for path in &entries {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if let Ok(contents) = std::fs::read(path) {
+                    let _ = zip.start_file(name, options);
+                    let _ = zip.write_all(&contents);
+                }
+            }
+        }
+        zip.finish().map_err(|e| format!("Zip error: {}", e))?;
+    }
+
+    let zip_bytes = zip_buf.into_inner();
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let default_name = format!("flowstt-logs-{}.zip", today);
+
+    // Show native save dialog and write the bytes.
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<std::path::PathBuf>>();
+    app_handle
+        .dialog()
+        .file()
+        .set_file_name(&default_name)
+        .save_file(move |path| {
+            let _ = tx.send(path.and_then(|p| p.into_path().ok()));
+        });
+
+    match rx.await {
+        Ok(Some(dest)) => {
+            std::fs::write(&dest, &zip_bytes)
+                .map_err(|e| format!("Failed to write zip: {}", e))?;
+        }
+        Ok(None) => {
+            // User cancelled — not an error.
+        }
+        Err(_) => return Err("Dialog channel error".to_string()),
+    }
+
+    Ok(())
+}
+
 /// Connect events -- no-op now since events are forwarded directly from the engine
 /// via the registered EventCallback. Kept for frontend compatibility.
 #[tauri::command]
@@ -651,6 +904,29 @@ fn log_to_file(level: String, message: String) {
     }
 }
 
+// ─── Window helpers ──────────────────────────────────────────────────────────
+
+/// Open the log viewer window, or focus it if already open.
+pub fn open_log_viewer_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("logs") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let _ = WebviewWindowBuilder::new(app, "logs", WebviewUrl::App("logs.html".into()))
+        .title("FlowSTT Logs")
+        .inner_size(900.0, 600.0)
+        .min_inner_size(600.0, 400.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(false)
+        .shadow(true)
+        .skip_taskbar(true)
+        .center()
+        .build();
+}
+
 // ─── Application entry point ─────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -661,8 +937,11 @@ pub fn run() {
     let headless = std::env::args().any(|arg| arg == "--headless");
     let test_mode = std::env::args().any(|arg| arg == "--test-mode");
 
-    // Initialize logging (single subscriber for both engine and GUI)
-    init_logging();
+    // Read config before initializing logging so we can use the configured level.
+    let initial_config = Config::load();
+
+    // Initialize layered logging subscriber with reloadable filter.
+    let (log_state, log_rx) = init_logging(&initial_config.log_level);
 
     // Set test mode state before tray setup so conditional menu items are available
     if test_mode {
@@ -682,7 +961,19 @@ pub fn run() {
         .manage(AppState {
             ipc_server_handle: Mutex::new(None),
         })
+        .manage(log_state)
         .setup(move |app| {
+            // Spawn the log-line forwarder task: drains the mpsc channel and
+            // emits each line as a "log-line" Tauri event to all windows.
+            {
+                let app_handle = app.handle().clone();
+                let mut rx = log_rx;
+                tauri::async_runtime::spawn(async move {
+                    while let Some(payload) = rx.recv().await {
+                        let _ = app_handle.emit("log-line", payload);
+                    }
+                });
+            }
             debug!(
                 "[Startup] setup() hook called (+{}ms from run())",
                 app_t0.elapsed().as_millis()
@@ -792,6 +1083,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             startup_log,
             log_to_file,
+            get_log_history,
+            get_log_level,
+            set_log_level,
+            download_logs,
             list_all_sources,
             set_sources,
             set_aec_enabled,

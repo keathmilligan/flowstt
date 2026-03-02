@@ -14,6 +14,7 @@ export default defineConfig(async () => ({
         about: "about.html",
         config: "config.html",
         setup: "setup.html",
+        logs: "logs.html",
       },
     },
   },

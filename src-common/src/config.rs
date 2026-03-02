@@ -22,6 +22,31 @@ pub enum ThemeMode {
     Dark,
 }
 
+/// Minimum log level for the tracing subscriber.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Error,
+    Warn,
+    #[default]
+    Info,
+    Debug,
+    Trace,
+}
+
+impl LogLevel {
+    /// Return the string representation used by `tracing_subscriber::EnvFilter`.
+    pub fn as_filter_str(&self) -> &'static str {
+        match self {
+            LogLevel::Error => "error",
+            LogLevel::Warn => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Debug => "debug",
+            LogLevel::Trace => "trace",
+        }
+    }
+}
+
 /// Service configuration that persists across restarts.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -52,6 +77,9 @@ pub struct Config {
     /// Preferred reference (system) audio device ID (restored on startup)
     #[serde(default)]
     pub preferred_source2_id: Option<String>,
+    /// Minimum log level for the tracing subscriber (default: info)
+    #[serde(default)]
+    pub log_level: LogLevel,
 }
 
 fn default_auto_toggle_hotkeys() -> Vec<HotkeyCombination> {
@@ -91,6 +119,8 @@ struct LegacyConfig {
     /// Preferred reference (system) audio device ID
     #[serde(default)]
     preferred_source2_id: Option<String>,
+    /// Minimum log level (may be absent in old configs)
+    log_level: Option<LogLevel>,
 }
 
 impl Config {
@@ -173,6 +203,7 @@ impl Config {
             always_on_top: false,
             preferred_source1_id: None,
             preferred_source2_id: None,
+            log_level: LogLevel::default(),
         }
     }
 
@@ -220,6 +251,7 @@ impl Config {
             always_on_top: false,
             preferred_source1_id: legacy.preferred_source1_id,
             preferred_source2_id: legacy.preferred_source2_id,
+            log_level: legacy.log_level.unwrap_or_default(),
         }
     }
 }

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowSTT Logs</title>
+    <link rel="stylesheet" href="/src/logs.css">
+</head>
+<body>
+    <div class="logs-container" data-tauri-drag-region>
+        <button class="close-btn" id="close-btn" title="Close">&times;</button>
+        <div class="logs-header" data-tauri-drag-region>
+            <img src="" alt="" class="logs-title-icon" id="logs-title-icon" aria-hidden="true">
+            <h2 class="logs-title">Logs</h2>
+            <div class="logs-header-spacer"></div>
+            <div class="logs-toolbar-actions">
+                <button id="download-btn" class="toolbar-btn" type="button" title="Download logs as zip">Download Logs</button>
+            </div>
+        </div>
+        <div class="logs-output" id="logs-output"></div>
+        <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" type="button">
+            &#8595; Scroll to bottom
+        </button>
+    </div>
+    <script type="module" src="/src/logs.ts"></script>
+</body>
+</html>

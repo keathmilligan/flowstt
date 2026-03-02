@@ -1,0 +1,289 @@
+@import './theme.css';
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/*
+ * Log output area is selectable; the rest of the window is not.
+ */
+body {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* ─── Window chrome ──────────────────────────────────────────────────────────── */
+
+.logs-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(145deg, var(--bg-gradient-start) 0%, var(--bg-gradient-mid) 50%, var(--bg-gradient-end) 100%);
+    overflow: hidden;
+}
+
+/* Custom close button — identical to config/about windows */
+.close-btn {
+    position: fixed;
+    top: 6px;
+    right: 6px;
+    width: 28px;
+    height: 28px;
+    min-width: unset;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--header-btn-color);
+    cursor: pointer;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    font-weight: 300;
+    line-height: 1;
+    transition: color 0.15s;
+    z-index: 1000;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.close-btn:hover { color: var(--header-btn-hover); }
+.close-btn:active { color: var(--header-btn-active); }
+
+/* ─── Header / toolbar ───────────────────────────────────────────────────────── */
+
+.logs-header {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    /* icon + title on the left, actions on the right, close button reserved */
+    padding: 0 44px 0 10px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-default);
+    gap: 0;
+}
+
+/* Icon: fixed small size, no stretch */
+.logs-title-icon {
+    height: 20px;
+    width: 20px;
+    flex-shrink: 0;
+    pointer-events: none;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    margin-right: 8px;
+}
+
+/* Title: left-aligned, no grow */
+.logs-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--config-title-text);
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Spacer: pushes actions to the right */
+.logs-header-spacer {
+    flex: 1;
+}
+
+.logs-toolbar-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.toolbar-btn {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-family: inherit;
+    border-radius: 4px;
+    border: 1px solid var(--border-default);
+    background: var(--surface-input);
+    color: var(--config-add-btn-text);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.toolbar-btn:hover {
+    background: var(--surface-input-hover);
+    border-color: var(--border-hover);
+    color: var(--config-add-btn-text-hover);
+}
+
+.toolbar-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ─── Log output area ────────────────────────────────────────────────────────── */
+
+.logs-output {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding: 4px 0;
+    scroll-behavior: auto;
+    font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+}
+
+.logs-output::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.logs-output::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+}
+
+.logs-output::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+/* ─── Log rows ───────────────────────────────────────────────────────────────── */
+
+.log-row {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-all;
+    padding: 1px 10px;
+    line-height: 1.5;
+}
+
+.log-row:hover {
+    background: var(--surface-segment-hover);
+}
+
+/* Unparseable continuation lines */
+.log-message-raw {
+    color: #6b7280;
+}
+
+/* ─── Column styles ──────────────────────────────────────────────────────────── */
+
+.log-ts {
+    color: #4a5568;
+}
+
+[data-theme="light"] .log-ts {
+    color: #9ca3af;
+}
+
+.log-level {
+    font-weight: 700;
+}
+
+.log-target {
+    color: #4a5568;
+}
+
+[data-theme="light"] .log-target {
+    color: #9ca3af;
+}
+
+.log-message {
+    color: #9ca3af;
+}
+
+[data-theme="light"] .log-message {
+    color: #4b5563;
+}
+
+/* ─── Level colors ───────────────────────────────────────────────────────────── */
+/*
+ * Timestamp and target: always dark gray (same across all levels).
+ * Level badge: colored per level.
+ * Message: medium gray by default; colored only for WARN/ERROR/CRITICAL.
+ */
+
+/* DEBUG — green level badge only; message stays medium gray */
+.level-debug .log-level { color: #4ade80; }
+[data-theme="light"] .level-debug .log-level { color: #16a34a; }
+
+/* INFO — blue level badge only; message stays medium gray */
+.level-info .log-level { color: #3b82f6; }
+
+/* WARN — yellow level badge + message */
+.level-warn .log-level,
+.level-warn .log-message { color: #facc15; }
+[data-theme="light"] .level-warn .log-level,
+[data-theme="light"] .level-warn .log-message { color: #b45309; }
+
+/* ERROR — red level badge + message */
+.level-error .log-level,
+.level-error .log-message { color: #f87171; }
+[data-theme="light"] .level-error .log-level,
+[data-theme="light"] .level-error .log-message { color: #dc2626; }
+
+/* CRITICAL — bright red level badge + message */
+.level-critical .log-level,
+.level-critical .log-message { color: #ff2020; }
+[data-theme="light"] .level-critical .log-level,
+[data-theme="light"] .level-critical .log-message { color: #b91c1c; }
+
+/* TRACE — dim gray level badge only; message stays medium gray */
+.level-trace .log-level { color: #6b7280; }
+
+/* ─── History separator ──────────────────────────────────────────────────────── */
+
+.log-history-separator {
+    border-top: 1px solid var(--border-default);
+    margin: 0;
+    padding: 0;
+    height: 0;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* ─── Scroll to bottom button ─────────────────────────────────────────────────── */
+
+.scroll-to-bottom-btn {
+    position: fixed;
+    bottom: 16px;
+    right: 20px;
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    font-family: inherit;
+    border-radius: 20px;
+    border: 1px solid var(--border-default);
+    background: var(--surface-input);
+    color: var(--text-primary);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    transition: background 0.15s;
+    -webkit-user-select: none;
+    user-select: none;
+    z-index: 100;
+}
+
+.scroll-to-bottom-btn:hover {
+    background: var(--surface-input-hover);
+}
+
+.hidden {
+    display: none !important;
+}

@@ -16,6 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use flowstt_common::config::Config;
 
 use super::{menu_ids, menu_labels, shutdown_engine};
+use crate::open_log_viewer_window;
 
 /// Set up the system tray on Windows.
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -42,6 +43,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         true,
         None::<&str>,
     )?;
+    let logs_item = MenuItem::with_id(app, menu_ids::LOGS, menu_labels::LOGS, true, None::<&str>)?;
     let about_item =
         MenuItem::with_id(app, menu_ids::ABOUT, menu_labels::ABOUT, true, None::<&str>)?;
     let exit_item = MenuItem::with_id(app, menu_ids::EXIT, menu_labels::EXIT, true, None::<&str>)?;
@@ -61,6 +63,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 &show_item,
                 &always_on_top_item,
                 &settings_item,
+                &logs_item,
                 &about_item,
                 &run_test_item,
                 &PredefinedMenuItem::separator(app)?,
@@ -74,6 +77,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 &show_item,
                 &always_on_top_item,
                 &settings_item,
+                &logs_item,
                 &about_item,
                 &PredefinedMenuItem::separator(app)?,
                 &exit_item,
@@ -117,6 +121,9 @@ fn handle_menu_event(
         }
         id if id == menu_ids::SETTINGS => {
             show_config_window(app);
+        }
+        id if id == menu_ids::LOGS => {
+            open_log_viewer_window(app);
         }
         id if id == menu_ids::ABOUT => {
             show_about_window(app);
@@ -322,7 +329,7 @@ fn load_tray_icon_from_paths(
                     return Some(img.to_owned());
                 }
                 Err(e) => {
-                    eprintln!("[Tray] Failed to load icon from {:?}: {}", path, e);
+                    warn!("[Tray] Failed to load icon from {:?}: {}", path, e);
                 }
             }
         }
@@ -336,7 +343,7 @@ fn load_tray_icon(app: &tauri::App) -> Image<'static> {
     load_tray_icon_from_paths(app.path().resource_dir().ok(), "icon.png")
         .or_else(|| load_tray_icon_from_paths(app.path().resource_dir().ok(), "32x32.png"))
         .unwrap_or_else(|| {
-            eprintln!("[Tray] Warning: Could not load tray icon, using fallback");
+            warn!("[Tray] Warning: Could not load tray icon, using fallback");
             create_fallback_icon()
         })
 }

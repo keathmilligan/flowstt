@@ -1241,6 +1241,7 @@ dependencies = [
 name = "flowstt-app"
 version = "0.1.18"
 dependencies = [
+ "chrono",
  "dirs 5.0.1",
  "flowstt-common",
  "flowstt-engine",
@@ -1255,6 +1256,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "windows 0.61.3",
+ "zip",
 ]
 
 [[package]]

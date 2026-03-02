@@ -16,6 +16,7 @@ pub mod menu_ids {
     pub const SHOW: &str = "show";
     pub const ALWAYS_ON_TOP: &str = "always_on_top";
     pub const SETTINGS: &str = "settings";
+    pub const LOGS: &str = "logs";
     pub const ABOUT: &str = "about";
     pub const RUN_TEST: &str = "run_test";
     pub const EXIT: &str = "exit";
@@ -27,6 +28,7 @@ pub mod menu_labels {
     pub const SHOW: &str = "Show";
     pub const ALWAYS_ON_TOP: &str = "Always on Top";
     pub const SETTINGS: &str = "Settings";
+    pub const LOGS: &str = "Logs";
     pub const ABOUT: &str = "About";
     pub const RUN_TEST: &str = "Run Test (WAV Directory)...";
     pub const EXIT: &str = "Exit";

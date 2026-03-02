@@ -157,6 +157,7 @@ function combinationsEqual(a: HotkeyCombination, b: HotkeyCombination): boolean 
 
 // DOM elements
 let themeSelect: HTMLSelectElement;
+let logLevelSelect: HTMLSelectElement;
 let source1Select: HTMLSelectElement;
 let source2Select: HTMLSelectElement;
 let hotkeyListEl: HTMLDivElement;
@@ -573,10 +574,11 @@ function handleToggleRecordKeyUp(e: KeyboardEvent) { ... }
 
 async function loadState() {
   try {
-    const [devices, status, pttStatus] = await Promise.all([
+    const [devices, status, pttStatus, logLevel] = await Promise.all([
       invoke<AudioDevice[]>("list_all_sources"),
       invoke<CaptureStatus>("get_status"),
       invoke<PttStatus>("get_ptt_status"),
+      invoke<string>("get_log_level"),
     ]);
 
     allDevices = devices;
@@ -593,6 +595,10 @@ async function loadState() {
 
     hotkeys = pttStatus.hotkeys || [];
     renderHotkeyList();
+
+    if (logLevel) {
+      logLevelSelect.value = logLevel;
+    }
 
     // Toggle hotkeys loading - disabled for now
     // toggleHotkeys = pttStatus.auto_toggle_hotkeys || [];
@@ -622,6 +628,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
+  logLevelSelect = document.getElementById("log-level-select") as HTMLSelectElement;
   source1Select = document.getElementById("source1-select") as HTMLSelectElement;
   source2Select = document.getElementById("source2-select") as HTMLSelectElement;
   hotkeyListEl = document.getElementById("hotkey-list") as HTMLDivElement;
@@ -656,6 +663,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   themeSelect.addEventListener("change", async () => {
     const mode = themeSelect.value as ThemeMode;
     await setThemeMode(mode);
+  });
+
+  logLevelSelect.addEventListener("change", async () => {
+    try {
+      await invoke("set_log_level", { level: logLevelSelect.value });
+    } catch (error) {
+      console.error("Failed to set log level:", error);
+    }
   });
 
   document.addEventListener("keydown", (e) => {
